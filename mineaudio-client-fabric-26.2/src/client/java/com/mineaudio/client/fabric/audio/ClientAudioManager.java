@@ -95,19 +95,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     @Override
     public void onPause(String sessionId, Packets.Pause pause) {
         Session session = sessions.get(sessionId);
-        if (session != null) session.setPaused(true);
+        if (session != null) session.schedule(pause.executeAtServerTime(), () -> session.setPaused(true));
     }
 
     @Override
     public void onResume(String sessionId, Packets.Resume resume) {
         Session session = sessions.get(sessionId);
-        if (session != null) session.setPaused(false);
+        if (session != null) session.schedule(resume.executeAtServerTime(), () -> session.setPaused(false));
     }
 
     @Override
     public void onSeek(String sessionId, Packets.Seek seek) {
         Session session = sessions.get(sessionId);
-        if (session != null) session.seek(seek.positionMs());
+        if (session != null) session.schedule(seek.executeAtServerTime(), () -> session.seek(seek.positionMs()));
     }
 
     @Override
@@ -152,6 +152,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final int revision;
         private final String url;
         private final long startPositionMs;
+        private final long serverStartTimeMs;
+        private final String bus;
         private final long durationHintMs;
         private final Packets.Play.Spatial spatial;
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
@@ -159,22 +161,27 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
-        private int ticks;
 
         private volatile ChannelAccess.ChannelHandle handle;
         private volatile float volume;
+        private volatile float lastAppliedVolume = -1f;
         private volatile boolean paused;
+        private volatile boolean started;
         private volatile boolean finished;
         private volatile boolean closed;
         private volatile String errorCode;
         private volatile String errorMessage;
         private volatile int seq;
+        private volatile long pendingActionAt;
+        private volatile Runnable pendingAction;
 
         Session(String sessionId, Packets.Play play) {
             this.id = sessionId;
             this.revision = play.resourceVersion();
             this.url = play.url();
             this.startPositionMs = play.positionMs();
+            this.serverStartTimeMs = play.serverStartTime();
+            this.bus = play.bus();
             this.durationHintMs = play.durationHintMs();
             this.spatial = play.spatial();
             this.volume = Math.max(0f, Math.min(1f, play.volume()));
@@ -187,7 +194,24 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             decoder.start(url, startPositionMs, this);
         }
 
-        /** 首批 PCM 到达后再创建 OpenAL 通道，避免排一堆静音导致 underrun。 */
+        /** 到服务端起播时刻（校时对齐）且首批 PCM 就绪后创建通道，避免提前排静音导致 underrun。 */
+        private void maybeStart() {
+            if (started || closed) return;
+            long now = ProtocolClient.get().clock().serverNow();
+            if (serverStartTimeMs > 0 && now < serverStartTimeMs) return;
+            if (!firstPcm.get()) return;
+            started = true;
+            if (serverStartTimeMs > 0) {
+                long late = now - serverStartTimeMs;
+                if (late > 50) {
+                    decoder.seek(startPositionMs + late);
+                    ring.clear();
+                    stream.reset();
+                }
+            }
+            ensureChannel();
+        }
+
         private void ensureChannel() {
             if (channelRequested.compareAndSet(false, true) == false) return;
             ChannelAccess access = channelAccess;
@@ -211,10 +235,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     applySpatial(channel);
                     channel.play();
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                            "[audio] 通道已启动 session={} effectiveVolume={} musicVolume={} ring={}B",
-                            id, effectiveVolume(),
-                            Minecraft.getInstance().options.getSoundSourceVolume(SoundSource.MUSIC),
-                            ring.available());
+                            "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B",
+                            id, effectiveVolume(), bus, ring.available());
                 });
             }).exceptionally(t -> {
                 fail("CHANNEL_ERROR", t.toString());
@@ -223,38 +245,40 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         void pump() {
-            if (closed || paused || finished || errorCode != null) return;
+            if (closed) return;
+            Runnable action = pendingAction;
+            if (action != null && ProtocolClient.get().clock().serverNow() >= pendingActionAt) {
+                pendingAction = null;
+                action.run();
+            }
+            if (!started) {
+                maybeStart();
+            }
             ChannelAccess.ChannelHandle current = handle;
+            float effective = effectiveVolume();
+            if (current != null && Math.abs(effective - lastAppliedVolume) > 0.005f) {
+                lastAppliedVolume = effective;
+                current.execute(channel -> channel.setVolume(effective));
+            }
+            if (paused || finished || errorCode != null) return;
             if (current == null) return;
-            boolean diagnose = ticks++ == 40;
             current.execute(channel -> {
                 channel.updateStream();
                 if (!channel.playing()) {
                     channel.play();
                 }
-                if (diagnose) {
-                    diagnose(channel);
-                }
             });
         }
 
-        private void diagnose(Channel channel) {
-            try {
-                java.lang.reflect.Field field = Channel.class.getDeclaredField("source");
-                field.setAccessible(true);
-                int source = field.getInt(channel);
-                int state = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_SOURCE_STATE);
-                int queued = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_BUFFERS_QUEUED);
-                int processed = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_BUFFERS_PROCESSED);
-                float gain = org.lwjgl.openal.AL10.alGetSourcef(source, org.lwjgl.openal.AL10.AL_GAIN);
-                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                        "[audio] 诊断 session={} source={} state={} queued={} processed={} gain={} ring={}B playing={} stopped={}",
-                        id, source, state, queued, processed, gain, ring.available(),
-                        channel.playing(), channel.stopped());
-            } catch (Throwable t) {
-                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
-                        "[audio] 诊断失败 session={}：{}", id, t.toString());
+        /** 按服务端执行时刻调度操作（校时对齐）。 */
+        void schedule(long executeAtServerTime, Runnable action) {
+            long now = ProtocolClient.get().clock().serverNow();
+            if (executeAtServerTime <= 0 || executeAtServerTime <= now) {
+                action.run();
+                return;
             }
+            pendingActionAt = executeAtServerTime;
+            pendingAction = action;
         }
 
         void setPaused(boolean value) {
@@ -336,12 +360,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         private float effectiveVolume() {
-            float category = Minecraft.getInstance().options.getSoundSourceVolume(category());
+            float category = Minecraft.getInstance().options.getFinalSoundSourceVolume(category());
             return Math.max(0f, Math.min(1f, volume * category));
         }
 
+        /** Bus → 游戏声音设置档位（总音量由 getFinalSoundSourceVolume 一并计入）。 */
         private SoundSource category() {
-            return SoundSource.MUSIC;
+            String name = bus == null ? "" : bus.toLowerCase(java.util.Locale.ROOT);
+            return switch (name) {
+                case "ambient" -> SoundSource.AMBIENT;
+                case "sfx" -> SoundSource.BLOCKS;
+                case "ui" -> SoundSource.UI;
+                default -> SoundSource.MUSIC;
+            };
         }
 
         private void report() {
@@ -353,6 +384,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 state = "FINISHED";
             } else if (paused) {
                 state = "PAUSED";
+            } else if (!started) {
+                state = "BUFFERING";
             } else if (decoder.durationMs() > 0 || decoder.positionMs() > 0) {
                 state = "PLAYING";
             } else {
@@ -406,9 +439,6 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     continue;
                 }
                 offset += written;
-            }
-            if (first) {
-                ensureChannel();
             }
         }
 
