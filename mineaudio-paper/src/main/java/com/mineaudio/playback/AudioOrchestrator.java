@@ -115,8 +115,17 @@ public final class AudioOrchestrator implements MineAudio {
         if (source == null) return;
         AudioBackend backend = backends.find(source).orElse(null);
         if (backend != null) {
-            backend.playAt(location, track, source, cue.options());
+            backend.playAt(location, track, source, cue.options(), 0);
         }
+    }
+
+    /** 在指定位置播放曲目（Emitter 用），radius <= 0 时用 Backend 默认距离。 */
+    public PlaybackHandle playTrackAt(Location location, AudioTrack track, double radius) {
+        AudioSource source = resolve(track, nearbyPlayer(location));
+        if (source == null) return NoopPlaybackHandle.stopped();
+        AudioBackend backend = backends.find(source).orElse(null);
+        if (backend == null) return NoopPlaybackHandle.stopped();
+        return backend.playAt(location, track, source, track.options(), radius);
     }
 
     @Override

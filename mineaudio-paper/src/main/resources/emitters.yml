@@ -1,0 +1,16 @@
+# MineAudio 发声点配置
+#
+# 示例：
+# emitters:
+#   tavern_radio:
+#     world: world
+#     x: 135
+#     y: 65
+#     z: -21
+#     track: tavern
+#     radius: 24
+#     trigger: REDSTONE          # ALWAYS | REDSTONE | COMMAND | INTERACT
+#     loop: true
+#
+# 也可以用 /audio emitter 命令在游戏内创建与修改（会写回本文件，注释会丢失）
+emitters: {}

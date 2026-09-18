@@ -59,22 +59,37 @@ public final class SoundBackend implements AudioBackend {
     }
 
     @Override
-    public PlaybackHandle playAt(Location location, AudioTrack track, AudioSource source, PlaybackOptions options) {
+    public PlaybackHandle playAt(Location location, AudioTrack track, AudioSource source, PlaybackOptions options,
+                                 double radius) {
         World world = location.getWorld();
         if (world == null) return NoopPlaybackHandle.stopped();
-        Sound sound = soundFor(track, source, options);
+        Sound sound = soundFor(track, volumeFor(options, radius), options.pitch(), source);
         world.playSound(sound, location.x(), location.y(), location.z());
         return SoundPlaybackHandle.at(plugin, world, location.x(), location.y(), location.z(),
                 sound, loopPeriod(track, options));
     }
 
     private static Sound soundFor(AudioTrack track, AudioSource source, PlaybackOptions options) {
+        return soundFor(track, options.volume(), options.pitch(), source);
+    }
+
+    private static Sound soundFor(AudioTrack track, float volume, float pitch, AudioSource source) {
         Key key = switch (source) {
             case AudioSource.PackSound pack -> pack.sound();
             case AudioSource.VanillaSound vanilla -> vanilla.sound();
             case AudioSource.Nbs ignored -> throw new IllegalArgumentException("SoundBackend 不支持 NBS");
         };
-        return Sound.sound(key, sourceOf(track.bus()), options.volume(), options.pitch());
+        return Sound.sound(key, sourceOf(track.bus()), volume, pitch);
+    }
+
+    /**
+     * 资源包声音没有 radius 参数，用音量近似可听范围（衰减距离默认 16 格）：
+     * radius / 16 作为音量倍数，clamp 到 [0.1, 4]。
+     */
+    private static float volumeFor(PlaybackOptions options, double radius) {
+        if (radius <= 0) return options.volume();
+        float scale = (float) Math.max(0.1, Math.min(4.0, radius / 16.0));
+        return options.volume() * scale;
     }
 
     /** 用原版音量分类承载四种 Bus，便于玩家用声音设置单独调节。 */

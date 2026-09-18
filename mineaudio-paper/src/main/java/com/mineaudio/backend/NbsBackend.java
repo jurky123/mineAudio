@@ -16,6 +16,7 @@ import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackOptions;
 import com.mineaudio.playback.NoopPlaybackHandle;
 
+import com.xxmicloxx.NoteBlockAPI.model.RepeatMode;
 import com.xxmicloxx.NoteBlockAPI.model.Song;
 import com.xxmicloxx.NoteBlockAPI.model.SoundCategory;
 import com.xxmicloxx.NoteBlockAPI.songplayer.PositionSongPlayer;
@@ -96,22 +97,24 @@ public final class NbsBackend implements AudioBackend {
         RadioSongPlayer songPlayer = new RadioSongPlayer(song);
         songPlayer.setCategory(categoryOf(track.bus()));
         songPlayer.setVolume(volumeOf(options.volume()));
-        songPlayer.setLoop(options.loop());
+        songPlayer.setRepeatMode(options.loop() ? RepeatMode.ONE : RepeatMode.NO);
         songPlayer.addPlayer(player);
         songPlayer.setPlaying(true);
         return new NbsPlaybackHandle(songPlayer);
     }
 
     @Override
-    public PlaybackHandle playAt(Location location, AudioTrack track, AudioSource source, PlaybackOptions options) {
+    public PlaybackHandle playAt(Location location, AudioTrack track, AudioSource source, PlaybackOptions options,
+                                 double radius) {
         Song song = songOf(source);
         if (song == null) return NoopPlaybackHandle.stopped();
         PositionSongPlayer songPlayer = new PositionSongPlayer(song);
         songPlayer.setCategory(categoryOf(track.bus()));
         songPlayer.setVolume(volumeOf(options.volume()));
-        songPlayer.setLoop(options.loop());
+        songPlayer.setRepeatMode(options.loop() ? RepeatMode.ONE : RepeatMode.NO);
         songPlayer.setTargetLocation(location);
-        songPlayer.setDistance(Math.max(1, plugin.getConfig().getInt("nbs.position-distance", 32)));
+        songPlayer.setDistance(radius > 0 ? (int) Math.ceil(radius)
+                : Math.max(1, plugin.getConfig().getInt("nbs.position-distance", 32)));
         songPlayer.setPlaying(true);
         return new NbsPlaybackHandle(songPlayer);
     }

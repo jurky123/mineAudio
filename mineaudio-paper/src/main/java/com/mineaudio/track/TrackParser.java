@@ -87,8 +87,14 @@ public final class TrackParser {
 
     /** 把字符串转成完整 Key：无命名空间时补 mineaudio。命令与业务侧共用。 */
     public static Optional<Key> keyOf(String id) {
+        if (id == null || id.isBlank()) return Optional.empty();
         String value = id.trim().toLowerCase(Locale.ROOT);
-        if (!value.contains(":")) value = "mineaudio:" + value;
+        if (!value.contains(":")) {
+            value = "mineaudio:" + value;
+        } else {
+            String[] parts = value.split(":", 2);
+            if (parts[0].isEmpty() || parts[1].isEmpty()) return Optional.empty();
+        }
         try {
             return Optional.of(Key.key(value));
         } catch (RuntimeException e) {

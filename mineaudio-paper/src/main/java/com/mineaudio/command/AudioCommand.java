@@ -26,6 +26,8 @@ import com.mineaudio.api.AudioSource;
 import com.mineaudio.api.AudioTrack;
 import com.mineaudio.api.Audience;
 import com.mineaudio.api.PlaybackHandle;
+import com.mineaudio.emitter.AudioEmitter;
+import com.mineaudio.emitter.Trigger;
 import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.region.AudioRegion;
 import com.mineaudio.region.RegionParser;
@@ -39,11 +41,14 @@ import net.kyori.adventure.text.format.NamedTextColor;
 /** /audio：点播、停止、区域管理、重载与调试。 */
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "reload", "debug");
+    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "emitter", "reload", "debug");
     private static final List<String> SCOPES = List.of("self", "player", "world", "global");
     private static final List<String> BUSES = List.of("MUSIC", "AMBIENT", "SFX", "UI");
     private static final List<String> REGION_ACTIONS = List.of("list", "pos1", "pos2", "create", "sphere",
             "delete", "settrack", "setambient", "setpriority");
+    private static final List<String> EMITTER_ACTIONS = List.of("list", "create", "bind", "delete", "settrack",
+            "settrigger", "setradius", "start", "stop");
+    private static final List<String> TRIGGERS = List.of("ALWAYS", "REDSTONE", "COMMAND", "INTERACT");
     private static final Pattern REGION_ID = Pattern.compile("[a-z0-9_-]{1,32}");
 
     private final MineAudioPlugin plugin;
@@ -68,12 +73,14 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             case "play" -> play(sender, args);
             case "stop" -> stop(sender, args);
             case "region" -> region(sender, args);
+            case "emitter" -> emitter(sender, args);
             case "reload" -> {
                 plugin.reloadAudio();
                 sender.sendMessage(Component.text("MineAudio 配置已重载（"
                         + plugin.trackRegistry().size() + " 首曲目，"
                         + plugin.cueRegistry().size() + " 个音效，"
-                        + plugin.regionManager().all().size() + " 个区域）", NamedTextColor.GREEN));
+                        + plugin.regionManager().all().size() + " 个区域，"
+                        + plugin.emitterManager().all().size() + " 个发声点）", NamedTextColor.GREEN));
             }
             case "debug" -> debug(sender);
             default -> sendUsage(sender);
@@ -332,13 +339,174 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                 + location.getBlockY() + "," + location.getBlockZ();
     }
 
+    // ---------- 发声点 ----------
+
+    private void emitter(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sendEmitterUsage(sender);
+            return;
+        }
+        String action = args[1].toLowerCase(Locale.ROOT);
+        if (action.equals("list")) {
+            for (AudioEmitter emitter : plugin.emitterManager().all()) {
+                sender.sendMessage(Component.text("  " + emitter.id() + " @ " + emitter.world()
+                        + " " + (long) emitter.x() + "," + (long) emitter.y() + "," + (long) emitter.z()
+                        + " track=" + emitter.track() + " r=" + (long) emitter.radius()
+                        + " " + emitter.trigger(), NamedTextColor.GRAY));
+            }
+            sender.sendMessage(Component.text("共 " + plugin.emitterManager().all().size()
+                    + " 个发声点", NamedTextColor.GREEN));
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("该命令只能在游戏内使用", NamedTextColor.RED));
+            return;
+        }
+        switch (action) {
+            case "create" -> createEmitter(sender, player, args);
+            case "bind" -> bindEmitter(sender, player, args);
+            case "delete" -> {
+                if (!emitterExists(sender, args, 2)) return;
+                plugin.emitterManager().remove(args[2].toLowerCase(Locale.ROOT));
+                plugin.emitterManager().save();
+                sender.sendMessage(Component.text("已删除发声点 " + args[2], NamedTextColor.GREEN));
+            }
+            case "settrack" -> setEmitterTrack(sender, args);
+            case "settrigger" -> setEmitterTrigger(sender, args);
+            case "setradius" -> setEmitterRadius(sender, args);
+            case "start" -> {
+                if (!emitterExists(sender, args, 2)) return;
+                boolean started = plugin.emitterManager().start(args[2].toLowerCase(Locale.ROOT));
+                sender.sendMessage(Component.text(started ? "已启动 " + args[2] : "启动失败（可能已在播放）",
+                        started ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+            }
+            case "stop" -> {
+                if (!emitterExists(sender, args, 2)) return;
+                boolean stopped = plugin.emitterManager().stop(args[2].toLowerCase(Locale.ROOT));
+                sender.sendMessage(Component.text(stopped ? "已停止 " + args[2] : "当前未在播放",
+                        stopped ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+            }
+            default -> sendEmitterUsage(sender);
+        }
+    }
+
+    private void createEmitter(CommandSender sender, Player player, String[] args) {
+        if (args.length < 4 || !validId(sender, args[2])) return;
+        Block block = player.getTargetBlockExact(5);
+        if (block == null) {
+            sender.sendMessage(Component.text("请对准一个方块", NamedTextColor.RED));
+            return;
+        }
+        String id = args[2].toLowerCase(Locale.ROOT);
+        if (plugin.emitterManager().emitter(id) != null) {
+            sender.sendMessage(Component.text("发声点已存在：" + id, NamedTextColor.RED));
+            return;
+        }
+        Key track = TrackParser.keyOf(args[3]).orElse(null);
+        if (track == null || !plugin.trackRegistry().contains(track)) {
+            sender.sendMessage(Component.text("未知曲目：" + args[3], NamedTextColor.RED));
+            return;
+        }
+        plugin.emitterManager().put(new AudioEmitter(id, block.getWorld().getName(),
+                block.getX(), block.getY(), block.getZ(), track, 0, Trigger.REDSTONE, false));
+        plugin.emitterManager().save();
+        sender.sendMessage(Component.text("已创建发声点 " + id + "（REDSTONE 触发）", NamedTextColor.GREEN));
+    }
+
+    private void bindEmitter(CommandSender sender, Player player, String[] args) {
+        if (!emitterExists(sender, args, 2)) return;
+        Block block = player.getTargetBlockExact(5);
+        if (block == null) {
+            sender.sendMessage(Component.text("请对准一个方块", NamedTextColor.RED));
+            return;
+        }
+        AudioEmitter emitter = plugin.emitterManager().emitter(args[2].toLowerCase(Locale.ROOT));
+        plugin.emitterManager().put(new AudioEmitter(emitter.id(), block.getWorld().getName(),
+                block.getX(), block.getY(), block.getZ(), emitter.track(), emitter.radius(),
+                emitter.trigger(), emitter.loop()));
+        plugin.emitterManager().save();
+        sender.sendMessage(Component.text("发声点 " + emitter.id() + " 已绑定到 "
+                + block.getWorld().getName() + " " + block.getX() + "," + block.getY() + "," + block.getZ(),
+                NamedTextColor.GREEN));
+    }
+
+    private void setEmitterTrack(CommandSender sender, String[] args) {
+        if (args.length < 4 || !emitterExists(sender, args, 2)) return;
+        Key track = TrackParser.keyOf(args[3]).orElse(null);
+        if (track == null || !plugin.trackRegistry().contains(track)) {
+            sender.sendMessage(Component.text("未知曲目：" + args[3], NamedTextColor.RED));
+            return;
+        }
+        AudioEmitter emitter = plugin.emitterManager().emitter(args[2].toLowerCase(Locale.ROOT));
+        plugin.emitterManager().put(withTrack(emitter, track));
+        plugin.emitterManager().save();
+        sender.sendMessage(Component.text("发声点 " + emitter.id() + " 曲目已设为 " + track,
+                NamedTextColor.GREEN));
+    }
+
+    private void setEmitterTrigger(CommandSender sender, String[] args) {
+        if (args.length < 4 || !emitterExists(sender, args, 2)) return;
+        Trigger trigger;
+        try {
+            trigger = Trigger.valueOf(args[3].toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            sender.sendMessage(Component.text("未知触发方式：" + args[3], NamedTextColor.RED));
+            return;
+        }
+        AudioEmitter emitter = plugin.emitterManager().emitter(args[2].toLowerCase(Locale.ROOT));
+        plugin.emitterManager().put(new AudioEmitter(emitter.id(), emitter.world(), emitter.x(), emitter.y(),
+                emitter.z(), emitter.track(), emitter.radius(), trigger, emitter.loop()));
+        plugin.emitterManager().save();
+        sender.sendMessage(Component.text("发声点 " + emitter.id() + " 触发方式已设为 " + trigger,
+                NamedTextColor.GREEN));
+    }
+
+    private void setEmitterRadius(CommandSender sender, String[] args) {
+        if (args.length < 4 || !emitterExists(sender, args, 2)) return;
+        double radius;
+        try {
+            radius = Double.parseDouble(args[3]);
+        } catch (NumberFormatException e) {
+            sender.sendMessage(Component.text("半径必须是数字", NamedTextColor.RED));
+            return;
+        }
+        if (radius < 0) {
+            sender.sendMessage(Component.text("半径不能为负", NamedTextColor.RED));
+            return;
+        }
+        AudioEmitter emitter = plugin.emitterManager().emitter(args[2].toLowerCase(Locale.ROOT));
+        plugin.emitterManager().put(new AudioEmitter(emitter.id(), emitter.world(), emitter.x(), emitter.y(),
+                emitter.z(), emitter.track(), radius, emitter.trigger(), emitter.loop()));
+        plugin.emitterManager().save();
+        sender.sendMessage(Component.text("发声点 " + emitter.id() + " 半径已设为 " + radius,
+                NamedTextColor.GREEN));
+    }
+
+    private static AudioEmitter withTrack(AudioEmitter emitter, Key track) {
+        return new AudioEmitter(emitter.id(), emitter.world(), emitter.x(), emitter.y(), emitter.z(),
+                track, emitter.radius(), emitter.trigger(), emitter.loop());
+    }
+
+    private boolean emitterExists(CommandSender sender, String[] args, int index) {
+        if (args.length <= index) {
+            sender.sendMessage(Component.text("缺少发声点 ID", NamedTextColor.RED));
+            return false;
+        }
+        if (plugin.emitterManager().emitter(args[index].toLowerCase(Locale.ROOT)) == null) {
+            sender.sendMessage(Component.text("发声点不存在：" + args[index], NamedTextColor.RED));
+            return false;
+        }
+        return true;
+    }
+
     // ---------- 调试 ----------
 
     private void debug(CommandSender sender) {
         sender.sendMessage(Component.text("MineAudio " + plugin.getPluginMeta().getVersion()
                 + " | 曲目 " + plugin.trackRegistry().size()
                 + " | 音效 " + plugin.cueRegistry().size()
-                + " | 区域 " + plugin.regionManager().all().size(), NamedTextColor.YELLOW));
+                + " | 区域 " + plugin.regionManager().all().size()
+                + " | 发声点 " + plugin.emitterManager().all().size(), NamedTextColor.YELLOW));
         for (AudioTrack track : plugin.trackRegistry().all()) {
             sender.sendMessage(Component.text("  - " + track.id() + " [" + track.bus() + "] "
                     + sourceName(track.primary()), NamedTextColor.GRAY));
@@ -419,6 +587,13 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                         + "setpriority <id> <值>", NamedTextColor.RED));
     }
 
+    private void sendEmitterUsage(CommandSender sender) {
+        sender.sendMessage(Component.text(
+                "用法：/audio emitter list|create <id> <曲目>|bind <id>|delete <id>|"
+                        + "settrack <id> <曲目>|settrigger <id> <ALWAYS|REDSTONE|COMMAND|INTERACT>|"
+                        + "setradius <id> <半径>|start <id>|stop <id>", NamedTextColor.RED));
+    }
+
     // ---------- Tab 补全 ----------
 
     @Override
@@ -442,6 +617,32 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         }
         if (sub.equals("region")) {
             return regionComplete(args);
+        }
+        if (sub.equals("emitter")) {
+            return emitterComplete(args);
+        }
+        return List.of();
+    }
+
+    private List<String> emitterComplete(String[] args) {
+        if (args.length == 2) {
+            return match(EMITTER_ACTIONS, args[1]);
+        }
+        String action = args[1].toLowerCase();
+        if (args.length == 3) {
+            return switch (action) {
+                case "create", "bind", "delete", "settrack", "settrigger", "setradius", "start", "stop" ->
+                        match(emitterIds(), args[2]);
+                default -> List.of();
+            };
+        }
+        if (args.length == 4) {
+            return switch (action) {
+                case "create", "settrack" -> match(trackIds(), args[3]);
+                case "settrigger" -> match(TRIGGERS, args[3]);
+                case "setradius" -> List.of("8", "16", "24", "32", "48", "64");
+                default -> List.of();
+            };
         }
         return List.of();
     }
@@ -502,6 +703,12 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
     private List<String> regionIds() {
         List<String> ids = new ArrayList<>();
         for (AudioRegion region : plugin.regionManager().all()) ids.add(region.id());
+        return ids;
+    }
+
+    private List<String> emitterIds() {
+        List<String> ids = new ArrayList<>();
+        for (AudioEmitter emitter : plugin.emitterManager().all()) ids.add(emitter.id());
         return ids;
     }
 

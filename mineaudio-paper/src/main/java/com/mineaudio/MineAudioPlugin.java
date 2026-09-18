@@ -8,6 +8,7 @@ import com.mineaudio.backend.SoundBackend;
 import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
 import com.mineaudio.config.YamlNode;
+import com.mineaudio.emitter.EmitterManager;
 import com.mineaudio.listener.PlayerConnectionListener;
 import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
@@ -27,6 +28,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final CueRegistry cueRegistry = new CueRegistry();
     private final BackendRegistry backends = new BackendRegistry();
     private final RegionManager regionManager = new RegionManager(this);
+    private final EmitterManager emitterManager = new EmitterManager(this);
     private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
 
@@ -46,7 +48,9 @@ public final class MineAudioPlugin extends JavaPlugin {
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends, packStatus);
         MineAudioProvider.register(orchestrator);
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
+        Bukkit.getPluginManager().registerEvents(emitterManager, this);
         regionManager.start();
+        emitterManager.start();
 
         AudioCommand command = new AudioCommand(this, orchestrator);
         PluginCommand audio = getCommand("audio");
@@ -63,20 +67,26 @@ public final class MineAudioPlugin extends JavaPlugin {
     public void onDisable() {
         MineAudioProvider.unregister();
         regionManager.stop();
+        emitterManager.stop();
         if (orchestrator != null) {
             orchestrator.shutdown();
         }
         getLogger().info("MineAudio 已停用");
     }
 
-    /** 重载 config.yml / tracks.yml / cues.yml / regions.yml 与 NBS 曲目。 */
+    /** 重载 config.yml / tracks.yml / cues.yml / regions.yml / emitters.yml 与 NBS 曲目。 */
     public void reloadAudio() {
         reloadConfig();
         loadTracks();
         loadCues();
         loadRegions();
+        loadEmitters();
         if (nbsBackend != null) {
             nbsBackend.reload();
+        }
+        // 首次启用时 orchestrator 尚未创建，由 onEnable 随后启动；重载时立即重建 ALWAYS 与轮询任务
+        if (orchestrator != null) {
+            emitterManager.start();
         }
     }
 
@@ -107,6 +117,15 @@ public final class MineAudioPlugin extends JavaPlugin {
         }
     }
 
+    private void loadEmitters() {
+        try {
+            YamlNode root = YamlFile.load(dataFile("emitters.yml"));
+            emitterManager.load(root.section("emitters"));
+        } catch (Exception e) {
+            getLogger().warning("读取 emitters.yml 失败：" + e.getMessage());
+        }
+    }
+
     private File dataFile(String name) {
         File file = new File(getDataFolder(), name);
         if (!file.exists()) saveResource(name, false);
@@ -131,6 +150,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public RegionManager regionManager() {
         return regionManager;
+    }
+
+    public EmitterManager emitterManager() {
+        return emitterManager;
     }
 
     public boolean debug() {
