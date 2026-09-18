@@ -34,6 +34,7 @@ import com.mineaudio.api.event.TrackStartedEvent;
 import com.mineaudio.backend.AudioBackend;
 import com.mineaudio.backend.BackendRegistry;
 import com.mineaudio.profile.PlayerPackStatus;
+import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 
@@ -50,17 +51,20 @@ public final class AudioOrchestrator implements MineAudio {
     private final CueRegistry cues;
     private final BackendRegistry backends;
     private final PlayerPackStatus packStatus;
+    private final PlayerStreamStatus streamStatus;
     private final Map<UUID, PlayerAudioState> states = new HashMap<>();
     private final Map<UUID, ActiveSession> activeSessions = new LinkedHashMap<>();
     private final Map<UUID, BukkitTask> finishTasks = new HashMap<>();
 
     public AudioOrchestrator(MineAudioPlugin plugin, TrackRegistry tracks, CueRegistry cues,
-                             BackendRegistry backends, PlayerPackStatus packStatus) {
+                             BackendRegistry backends, PlayerPackStatus packStatus,
+                             PlayerStreamStatus streamStatus) {
         this.plugin = plugin;
         this.tracks = tracks;
         this.cues = cues;
         this.backends = backends;
         this.packStatus = packStatus;
+        this.streamStatus = streamStatus;
     }
 
     // ---------- MineAudio API ----------
@@ -75,6 +79,11 @@ public final class AudioOrchestrator implements MineAudio {
         AudioTrack track = tracks.get(trackKey).orElse(null);
         if (track == null) {
             debug("未知曲目 " + trackKey);
+            return NoopPlaybackHandle.stopped();
+        }
+        // 流媒体 Backend 无多会话能力（MoeMusic 为全服共享队列），只接受全服受众
+        if (track.primary() instanceof AudioSource.Stream && !audience.isGlobal()) {
+            plugin.getLogger().warning("流媒体曲目 " + track.id() + " 只支持 global 播放");
             return NoopPlaybackHandle.stopped();
         }
         PlaybackOptions options = override != null ? override : track.options();
@@ -217,6 +226,11 @@ public final class AudioOrchestrator implements MineAudio {
         return state == null ? null : state.music();
     }
 
+    /** 该玩家是否有可用的流媒体客户端（MoeMusic mod）。 */
+    public boolean streamAvailable(Player player) {
+        return streamStatus.streamAvailable(player);
+    }
+
     public List<PlaybackSession> sessions(Player player) {
         PlayerAudioState state = states.get(player.getUniqueId());
         return state == null ? List.of() : state.sessions();
@@ -301,7 +315,9 @@ public final class AudioOrchestrator implements MineAudio {
 
     private AudioSource resolve(AudioTrack track, Player player) {
         boolean packAvailable = player == null || packStatus.packAvailable(player);
-        Optional<AudioSource> source = SourceResolver.resolve(track, packAvailable, backends::canPlay);
+        boolean streamAvailable = player == null || streamStatus.streamAvailable(player);
+        Optional<AudioSource> source = SourceResolver.resolve(track, packAvailable, streamAvailable,
+                backends::canPlay);
         if (source.isEmpty()) {
             debug("无法播放 " + track.id() + "（Backend 或资源包不可用且无 fallback）");
             return null;
@@ -357,7 +373,7 @@ public final class AudioOrchestrator implements MineAudio {
     private PlaybackSession startPlayer(Player player, AudioTrack track, PlaybackOptions options,
                                         PlaybackOrigin origin) {
         Optional<AudioSource> resolved = SourceResolver.resolve(track,
-                packStatus.packAvailable(player), backends::canPlay);
+                packStatus.packAvailable(player), streamStatus.streamAvailable(player), backends::canPlay);
         if (resolved.isEmpty()) {
             debug(player.getName() + " 无法播放 " + track.id() + "（Backend 或资源包不可用且无 fallback）");
             return null;

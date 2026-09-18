@@ -519,6 +519,7 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         if (sender instanceof Player player) {
             AudioCapabilities capabilities = orchestrator.capabilities(player);
             sender.sendMessage(Component.text("  能力：vanillaClient=" + capabilities.vanillaClient()
+                    + " stream=" + orchestrator.streamAvailable(player)
                     + " loop=" + capabilities.loop()
                     + " positional=" + capabilities.positional(), NamedTextColor.GRAY));
         }
@@ -571,6 +572,8 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             case AudioSource.PackSound pack -> "PACK " + pack.sound();
             case AudioSource.VanillaSound vanilla -> "VANILLA " + vanilla.sound();
             case AudioSource.Nbs nbs -> "NBS " + nbs.file();
+            case AudioSource.Stream stream -> "STREAM " + stream.provider() + " "
+                    + (stream.uri() != null ? stream.uri() : stream.source() + ":" + stream.id());
         };
     }
 

@@ -25,5 +25,13 @@ pack:
   # 收到玩家资源包加载失败事件后自动按未加载处理（走 fallback）
   assume-loaded: true
 
+stream:
+  # 未检测到 MoeMusic 客户端 mod 时是否仍尝试流播放（默认关闭，按 fallback 降级）
+  assume-available: false
+  # 是否允许 uri 直链（仍交由 MoeMusic 的权限与媒体防火墙校验）
+  http-enabled: false
+  # http-enabled 时的主机白名单；留空表示不限制主机
+  allowed-hosts: []
+
 # 输出更多日志，便于排查
 debug: false

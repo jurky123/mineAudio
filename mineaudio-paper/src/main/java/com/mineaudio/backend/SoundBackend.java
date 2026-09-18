@@ -78,6 +78,7 @@ public final class SoundBackend implements AudioBackend {
             case AudioSource.PackSound pack -> pack.sound();
             case AudioSource.VanillaSound vanilla -> vanilla.sound();
             case AudioSource.Nbs ignored -> throw new IllegalArgumentException("SoundBackend 不支持 NBS");
+            case AudioSource.Stream ignored -> throw new IllegalArgumentException("SoundBackend 不支持流媒体");
         };
         return Sound.sound(key, sourceOf(track.bus()), volume, pitch);
     }

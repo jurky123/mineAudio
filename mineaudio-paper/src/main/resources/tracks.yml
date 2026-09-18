@@ -35,3 +35,13 @@ tracks:
 #     bus: MUSIC
 #     file: tavern.nbs
 #     loop: true
+#
+#   radio:
+#     type: STREAM               # 需要服务器安装 MoeMusic 且玩家装 MoeMusic 客户端
+#     bus: MUSIC
+#     provider: moemusic
+#     source: netease            # 音源插件 ID（netease / qqmusic / kugou ...）
+#     id: "1234567890"           # 曲目 ID；也可改用 uri: "https://..."（默认禁用）
+#     fallback:                  # 无 MoeMusic 客户端/服务端时的降级
+#       type: PACK
+#       sound: mineaudio:music.demo

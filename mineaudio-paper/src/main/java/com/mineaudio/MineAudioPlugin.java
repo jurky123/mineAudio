@@ -5,6 +5,7 @@ import java.io.File;
 import com.mineaudio.backend.BackendRegistry;
 import com.mineaudio.backend.NbsBackend;
 import com.mineaudio.backend.SoundBackend;
+import com.mineaudio.backend.StreamBackend;
 import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
 import com.mineaudio.config.YamlNode;
@@ -12,7 +13,9 @@ import com.mineaudio.emitter.EmitterManager;
 import com.mineaudio.listener.PlayerConnectionListener;
 import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
+import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.region.RegionManager;
+import com.mineaudio.stream.MoeMusicProvider;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 import org.bukkit.Bukkit;
@@ -44,8 +47,16 @@ public final class MineAudioPlugin extends JavaPlugin {
         } else {
             getLogger().info("未检测到 NoteBlockAPI，NBS Backend 不可用（PACK / Vanilla 不受影响）");
         }
+        StreamBackend streamBackend = new StreamBackend();
+        streamBackend.register(new MoeMusicProvider(this));
+        backends.register(streamBackend);
+        if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
+            getLogger().info("未检测到 MoeMusic，流媒体 Backend 不可用（安装后重启即可用）");
+        }
         PlayerPackStatus packStatus = new PlayerPackStatus(this);
-        orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends, packStatus);
+        PlayerStreamStatus streamStatus = new PlayerStreamStatus(this);
+        orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends,
+                packStatus, streamStatus);
         MineAudioProvider.register(orchestrator);
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
         Bukkit.getPluginManager().registerEvents(emitterManager, this);

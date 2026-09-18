@@ -19,6 +19,7 @@ class SourceResolverTest {
 
     private static final AudioSource PACK = new AudioSource.PackSound(Key.key("mineaudio:music.spawn"));
     private static final AudioSource VANILLA = new AudioSource.VanillaSound(Key.key("minecraft:music.overworld.forest"));
+    private static final AudioSource STREAM = new AudioSource.Stream("moemusic", "netease", "123", null);
 
     private static AudioTrack track(AudioSource primary, AudioSource fallback) {
         return new AudioTrack(Key.key("mineaudio:test"), AudioBus.MUSIC, primary, fallback,
@@ -27,31 +28,43 @@ class SourceResolverTest {
 
     @Test
     void prefersPrimaryWhenPackLoaded() {
-        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), true, source -> true);
+        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), true, true, source -> true);
         assertEquals(PACK, result.orElseThrow());
     }
 
     @Test
     void fallsBackWhenPackUnavailable() {
-        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), false, source -> true);
+        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), false, true, source -> true);
         assertEquals(VANILLA, result.orElseThrow());
     }
 
     @Test
     void emptyWhenNoFallbackAndPackUnavailable() {
-        assertTrue(SourceResolver.resolve(track(PACK, null), false, source -> true).isEmpty());
+        assertTrue(SourceResolver.resolve(track(PACK, null), false, true, source -> true).isEmpty());
     }
 
     @Test
     void fallsBackWhenBackendMissing() {
-        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), true,
+        Optional<AudioSource> result = SourceResolver.resolve(track(PACK, VANILLA), true, true,
                 source -> source instanceof AudioSource.VanillaSound);
         assertEquals(VANILLA, result.orElseThrow());
     }
 
     @Test
     void vanillaAlwaysPlayable() {
-        Optional<AudioSource> result = SourceResolver.resolve(track(VANILLA, null), false, source -> true);
+        Optional<AudioSource> result = SourceResolver.resolve(track(VANILLA, null), false, false, source -> true);
         assertEquals(VANILLA, result.orElseThrow());
+    }
+
+    @Test
+    void streamRequiresClientCapability() {
+        assertEquals(STREAM, SourceResolver.resolve(track(STREAM, null), true, true, source -> true).orElseThrow());
+        assertTrue(SourceResolver.resolve(track(STREAM, null), true, false, source -> true).isEmpty());
+    }
+
+    @Test
+    void streamFallsBackWhenClientMissing() {
+        Optional<AudioSource> result = SourceResolver.resolve(track(STREAM, PACK), true, false, source -> true);
+        assertEquals(PACK, result.orElseThrow());
     }
 }

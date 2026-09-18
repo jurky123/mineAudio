@@ -87,6 +87,60 @@ class TrackParserTest {
     }
 
     @Test
+    void parsesStreamTrack() {
+        YamlNode root = tracks("""
+                tracks:
+                  radio:
+                    type: STREAM
+                    bus: MUSIC
+                    provider: moemusic
+                    source: netease
+                    id: "1234567890"
+                    fallback:
+                      type: PACK
+                      sound: mineaudio:music.demo
+                """);
+        TrackRegistry registry = new TrackRegistry();
+        registry.load(root, warnings::add);
+
+        AudioTrack track = registry.get(Key.key("mineaudio:radio")).orElseThrow();
+        assertEquals(new AudioSource.Stream("moemusic", "netease", "1234567890", null), track.primary());
+        assertTrue(track.fallback() instanceof AudioSource.PackSound);
+        assertTrue(warnings.isEmpty(), warnings.toString());
+    }
+
+    @Test
+    void parsesStreamUriTrack() {
+        YamlNode root = tracks("""
+                tracks:
+                  web:
+                    type: STREAM
+                    uri: "https://cdn.example.com/a.mp3"
+                """);
+        TrackRegistry registry = new TrackRegistry();
+        registry.load(root, warnings::add);
+
+        AudioTrack track = registry.get(Key.key("mineaudio:web")).orElseThrow();
+        assertEquals(new AudioSource.Stream("moemusic", null, null, "https://cdn.example.com/a.mp3"),
+                track.primary());
+    }
+
+    @Test
+    void rejectsStreamWithoutReference() {
+        YamlNode root = tracks("""
+                tracks:
+                  broken:
+                    type: STREAM
+                    bus: MUSIC
+                """);
+        TrackRegistry registry = new TrackRegistry();
+        registry.load(root, warnings::add);
+
+        assertEquals(0, registry.size());
+        assertFalse(warnings.isEmpty());
+    }
+
+    @Test
     void rejectsNbsPathTraversal() {
         YamlNode root = tracks("""
                 tracks:

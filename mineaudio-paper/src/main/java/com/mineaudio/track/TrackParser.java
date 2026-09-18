@@ -78,11 +78,30 @@ public final class TrackParser {
                 }
                 return Optional.of(new AudioSource.Nbs(file));
             }
+            case "STREAM" -> {
+                String provider = section.string("provider", "moemusic").trim().toLowerCase(Locale.ROOT);
+                if (provider.isEmpty()) provider = "moemusic";
+                String source = trimToNull(section.string("source", null));
+                String id = trimToNull(section.string("id", null));
+                String uri = trimToNull(section.string("uri", null));
+                try {
+                    return Optional.of(new AudioSource.Stream(provider, source, id, uri));
+                } catch (IllegalArgumentException e) {
+                    warn.accept(where + "：STREAM 需要 uri 或 source+id");
+                    return Optional.empty();
+                }
+            }
             default -> {
                 warn.accept(where + "：未知来源类型 " + type);
                 return Optional.empty();
             }
         }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /** 把字符串转成完整 Key：无命名空间时补 mineaudio。命令与业务侧共用。 */

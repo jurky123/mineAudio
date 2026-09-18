@@ -29,4 +29,22 @@ public sealed interface AudioSource {
             Objects.requireNonNull(file, "file");
         }
     }
+
+    /**
+     * 流媒体曲目：服务端只发播放控制，客户端直连音源播放。
+     * <p>
+     * 两种写法二选一：
+     * <ul>
+     *   <li>稳定引用：{@code provider + source + id}（如 moemusic + netease + 歌曲 ID）</li>
+     *   <li>直链：{@code provider + uri}（默认禁用，需管理员开启并配置白名单）</li>
+     * </ul>
+     */
+    record Stream(String provider, String source, String id, String uri) implements AudioSource {
+        public Stream {
+            Objects.requireNonNull(provider, "provider");
+            if (uri == null && (source == null || source.isBlank() || id == null || id.isBlank())) {
+                throw new IllegalArgumentException("Stream 需要 uri 或 source+id");
+            }
+        }
+    }
 }

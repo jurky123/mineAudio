@@ -18,6 +18,11 @@ public interface Audience {
 
     Collection<? extends Player> players();
 
+    /** 是否为全服受众。流媒体 Backend 无多会话能力时只接受全服播放。 */
+    default boolean isGlobal() {
+        return false;
+    }
+
     static Audience player(Player player) {
         return new SinglePlayerAudience(player);
     }
@@ -85,6 +90,11 @@ final class GlobalAudience implements Audience {
     static final GlobalAudience INSTANCE = new GlobalAudience();
 
     private GlobalAudience() {
+    }
+
+    @Override
+    public boolean isGlobal() {
+        return true;
     }
 
     @Override

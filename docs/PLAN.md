@@ -3,7 +3,8 @@
 > 依据：[初步设计文档](../初步设计文档) §69 / §77。
 > 核心原则：MineAudio 负责 **WHEN / WHO / WHERE / WHAT**，Backend 负责 **HOW**。
 >
-> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成，运行时联机验收待部署服务器。
+> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成；Phase 2（MoeMusic 流媒体命令桥）已实现，
+> 运行时联机验收待部署 MoeMusic 服务端插件与客户端 mod。
 
 ## 1. V1 范围
 
@@ -273,6 +274,23 @@ emitters:
 - `PackBackend` 与 `VanillaBackend` 播放机制一致，合并为 `SoundBackend`，PACK 的可用性判断由 Orchestrator 选源时处理
 - Emitter 触发 V1 支持 `ALWAYS / REDSTONE / COMMAND / INTERACT`；`PROXIMITY` 解析时降级为 `ALWAYS` 并告警，留待 Phase 4
 - World BGM 采用 `regions.yml` 的 `worlds:` 段（已确认）
+
+## 9.5 Phase 2 实现说明（MoeMusic 流媒体）
+
+调研结论（2026-09-18）：MoeMusic 的公开 Plugin API（`org.lolicode.moemusic:api`，maven.lolicode.org）
+面向**在 MoeMusic 内部运行的音源/扩展插件**，不提供外部 Paper 插件控制播放的 API；
+服务端播放由独立的 Spigot/Paper 插件（`MoeMusic-Minecraft` 的 `spigot` 分支）以**全服共享队列**管理。
+因此 MineAudio 采用设计文档预留的“命令 / 协议桥”方案：
+
+- `StreamBackend` + `StreamProvider` 抽象；V1 实现 `MoeMusicProvider`，把 `Stream` 曲目翻译为
+  `/music addById <source> <id> --now`、`/music stop|pause|resume`（控制台执行，绕过玩家权限）
+- `uri` 直链默认禁用，开启后仍受 `stream.allowed-hosts` 白名单和 MoeMusic 自身媒体防火墙约束
+- 能力如实上报：`synchronizedPlayback=true`，`multiSession=false`（共享队列），`seek=false`、位置声/歌词不支持；
+  因此 `STREAM` 只接受 `global` 受众
+- 客户端能力探测：MoeMusic 客户端注册 `moemusic:client_handshake` 插件通道，
+  用 `Player#getListeningPluginChannels()` 判断；未装客户端且有 fallback 的玩家走 PACK/NBS 降级
+- 同一曲目按 `track.id` 去重：多个玩家会话复用同一共享队列句柄；旧句柄停止不会误停新曲
+- Concerto 与真正的 per-player 流播放留待 Phase 2.5 / Phase 5
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 
