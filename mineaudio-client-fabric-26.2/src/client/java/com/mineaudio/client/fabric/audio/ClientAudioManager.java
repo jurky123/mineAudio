@@ -291,17 +291,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** 到服务端起播时刻（校时对齐）且首批 PCM 就绪后创建通道，避免提前排静音导致 underrun。 */
         private void maybeStart() {
             if (started || closed) return;
+            boolean synced = ProtocolClient.get().clock().rttMs() > 0;
             long now = ProtocolClient.get().clock().serverNow();
-            if (serverStartTimeMs > 0 && now < serverStartTimeMs) return;
+            if (serverStartTimeMs > 0 && synced && now < serverStartTimeMs) return;
             if (!firstPcm.get()) return;
             started = true;
-            if (serverStartTimeMs > 0) {
-                long late = now - serverStartTimeMs;
-                if (late > 50) {
-                    decoder.seek(startPositionMs + late);
-                    ring.clear();
-                    stream.reset();
-                }
+            long late = serverStartTimeMs > 0 ? now - serverStartTimeMs : 0;
+            // 只在迟到窗口合理时跳播；时钟未同步或迟到过久则从头播，避免 seek 到越界位置
+            if (synced && late > 50 && late < 3000) {
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                        "[audio] 起播迟到 {}ms，跳到 {}ms session={}", late, startPositionMs + late, id);
+                decoder.seek(startPositionMs + late);
+                ring.clear();
+                stream.reset();
             }
             ensureChannel();
         }
