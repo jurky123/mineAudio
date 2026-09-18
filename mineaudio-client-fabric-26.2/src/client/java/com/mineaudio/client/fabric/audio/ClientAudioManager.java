@@ -321,7 +321,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     return;
                 }
                 if (closed) {
-                    created.release();
+                    created.execute(Channel::stop);
                     return;
                 }
                 handle = created;
@@ -433,15 +433,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             ChannelAccess.ChannelHandle current = handle;
             handle = null;
             if (current != null) {
-                current.execute(channel -> {
-                    channel.stop();
-                    try {
-                        current.release();
-                    } catch (Throwable t) {
-                        com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
-                                "[audio] 释放通道失败 session={}：{}", id, t.toString());
-                    }
-                });
+                // 与原版一致：只 stop，release 由 ChannelAccess.clear()（断线/重载）统一处理，
+                // 手动 release 会让 handle 残留在内部集合里导致断线时 "unknown channel" 崩溃
+                current.execute(Channel::stop);
             }
         }
 
