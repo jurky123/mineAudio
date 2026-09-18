@@ -41,7 +41,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 /** /audio：点播、停止、区域管理、重载与调试。 */
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "emitter", "reload", "debug");
+    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "emitter", "ui", "reload", "debug");
     private static final List<String> SCOPES = List.of("self", "player", "world", "global");
     private static final List<String> BUSES = List.of("MUSIC", "AMBIENT", "SFX", "UI");
     private static final List<String> REGION_ACTIONS = List.of("list", "pos1", "pos2", "create", "sphere",
@@ -74,6 +74,18 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             case "stop" -> stop(sender, args);
             case "region" -> region(sender, args);
             case "emitter" -> emitter(sender, args);
+            case "ui" -> {
+                if (sender instanceof Player player) {
+                    if (plugin.audioUi().open(player)) {
+                        sender.sendMessage(Component.text("已打开音乐界面", NamedTextColor.GREEN));
+                    } else {
+                        sender.sendMessage(Component.text("需要 MineUI 客户端（0.7.0+）才能打开音乐界面",
+                                NamedTextColor.YELLOW));
+                    }
+                } else {
+                    sender.sendMessage(Component.text("该命令只能在游戏内使用", NamedTextColor.RED));
+                }
+            }
             case "reload" -> {
                 plugin.reloadAudio();
                 sender.sendMessage(Component.text("MineAudio 配置已重载（"
@@ -580,7 +592,8 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
     private void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
                 "用法：/audio play <曲目> [范围] | /audio stop [Bus] [范围] |"
-                        + " /audio region ... | /audio reload | /audio debug", NamedTextColor.RED));
+                        + " /audio region ... | /audio emitter ... | /audio ui | /audio reload | /audio debug",
+                NamedTextColor.RED));
     }
 
     private void sendRegionUsage(CommandSender sender) {

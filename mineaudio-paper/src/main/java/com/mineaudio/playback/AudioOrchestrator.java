@@ -231,6 +231,18 @@ public final class AudioOrchestrator implements MineAudio {
         return streamStatus.streamAvailable(player);
     }
 
+    /** 暂停该玩家当前 MUSIC（Backend 不支持时返回 false）。 */
+    public boolean pauseMusic(Player player) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        return state != null && state.music() != null && state.music().handle().pause();
+    }
+
+    /** 继续该玩家当前 MUSIC（Backend 不支持时返回 false）。 */
+    public boolean resumeMusic(Player player) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        return state != null && state.music() != null && state.music().handle().resume();
+    }
+
     public List<PlaybackSession> sessions(Player player) {
         PlayerAudioState state = states.get(player.getUniqueId());
         return state == null ? List.of() : state.sessions();

@@ -13,6 +13,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 repositories {
+    mavenLocal()
     mavenCentral()
     maven {
         name = 'papermc'
@@ -29,6 +30,8 @@ dependencies {
     compileOnly "io.papermc.paper:paper-api:${paper_version}"
     compileOnly project(':mineaudio-api')
     compileOnly "com.github.koca2000:NoteBlockAPI:${noteblockapi_version}"
+    // MineUI 业务 API（可选集成：未安装时退化为聊天状态）
+    compileOnly "com.mineui:mineui-paper:${mineui_version}"
 
     // 单测需要 YamlConfiguration 等 Bukkit 配置类，以及 api 模块的模型
     testImplementation "io.papermc.paper:paper-api:${paper_version}"

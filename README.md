@@ -22,6 +22,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
 - 发声点：世界坐标 + 半径，`ALWAYS` / `REDSTONE` / `COMMAND` / `INTERACT` 触发
 - Fallback：资源包未加载或 NoteBlockAPI 未安装时自动降级；缺失只影响对应 Backend
+- MineUI 音乐界面：`/audio ui` 查看当前播放、控制暂停/停止、点播曲目与停止环境音
 - 每玩家能力查询（`AudioCapabilities`）与事件（播放 / 停止 / 进出区域 / Emitter 启动）
 - Java API `com.mineaudio.api`：`play` / `playSfx` / `playSfxAt` / `stop` / `registerCue`
 
@@ -32,10 +33,14 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 ./gradlew :mineaudio-api:publishToMavenLocal      # 供业务插件 compileOnly
 
 ./deploy.sh                                       # 部署到 /home/ubuntu/minecraft
+
+./tools/build_client_kit.sh                       # 生成玩家客户端安装包（MineUI + MoeMusic 及依赖）
 ```
 
 `deploy.sh` 会构建插件、生成资源包、复制 NBS 曲目，并把 `mineaudio.zip` 放进
 `plugins/PackHost/packs/`；MineAudio 不自己开 HTTP 端口，资源包由 PackHost 合并下发。
+`tools/build_client_kit.sh` 从 Modrinth 解析 Fabric 26.2 最新版本，产出
+`tools/out/mineaudio-client-kit.zip`（含安装说明、Fabric 安装器）。
 
 依赖：
 
@@ -179,6 +184,33 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 - `uri` 直链默认禁用；开启 `stream.http-enabled` 后仍受 `stream.allowed-hosts` 白名单和 MoeMusic 自身权限约束
 - 内容过滤、限流、单曲时长策略由 MoeMusic 服务端配置负责，MineAudio 不重复实现
 
+## 音乐界面（MineUI）
+
+`/audio ui` 打开声明式音乐界面（页面 JSON 随插件 jar 发布，改界面不用重发 mod）：
+
+```text
+┌─────────────── MineAudio ───────────────┐
+│  ♪ MineAudio        流媒体客户端：已连接 │
+│  ┌────────────────────────────────────┐ │
+│  │ 💿  稻香                            │ │
+│  │     周杰伦                          │ │
+│  │     ● PLAYING  stream  API          │ │
+│  └────────────────────────────────────┘ │
+│  [暂停] [继续] [停止音乐] [停止环境音]   │
+│  曲目（自己 / 全服）                     │
+│  稻香      MUSIC  STREAM   [自己][全服] │
+│  demo      MUSIC  PACK     [自己][全服] │
+│  环境音（AMBIENT）                       │
+│  rain                                    │
+│                  [关闭]                  │
+└──────────────────────────────────────────┘
+```
+
+- 打开时下发完整状态，之后每秒与每次操作后增量推送（服务端权威状态）
+- 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
+- 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`
+- 后续（Phase 3 剩余）：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
+
 ## 命令
 
 `/audio`，权限 `mineaudio.admin`（默认 op）。玩家名/世界名/曲目/区域均有 Tab 补全。
@@ -206,6 +238,7 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 /audio emitter delete <id>
 
 /audio reload
+/audio ui                                       # MineUI 音乐界面（需客户端装 MineUI mod）
 /audio debug                                    # 曲目/音效/区域/发声点 + 在线玩家会话
 ```
 
@@ -281,9 +314,12 @@ Cuboid/Sphere 区域与优先级、红石 Emitter、Cue 与 Fallback、Java API�
 Phase 2 已完成（MoeMusic 部分）：`STREAM` 曲目、MoeMusic 命令桥、全服同步播放、
 按玩家客户端能力 fallback、`moemusic:client_handshake` 能力探测。
 
+Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 / 暂停继续停止 / 曲目点播 / 环境音），
+客户端安装包由 `tools/build_client_kit.sh` 生成。
+
 后续阶段见 [docs/PLAN.md](docs/PLAN.md)：
 
 - Phase 2.5：Concerto Adapter（可选）、`uri` 直链白名单细化
-- Phase 3：MineUI 播放界面（正在播放 / 搜索 / 点歌 / 队列 / 音量）
+- Phase 3 剩余：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
 - Phase 4：WorldGuard Adapter、时间与天气条件、播放列表
 - Phase 5：MineAudio Client（真正的 per-player stream 与空间音频）

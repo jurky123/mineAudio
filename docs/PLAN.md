@@ -3,8 +3,8 @@
 > 依据：[初步设计文档](../初步设计文档) §69 / §77。
 > 核心原则：MineAudio 负责 **WHEN / WHO / WHERE / WHAT**，Backend 负责 **HOW**。
 >
-> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成；Phase 2（MoeMusic 流媒体命令桥）已实现，
-> 运行时联机验收待部署 MoeMusic 服务端插件与客户端 mod。
+> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成；Phase 2（MoeMusic 流媒体命令桥）已实现并部署；
+> Phase 3 界面部分（MineUI 音乐界面）已实现，客户端安装包见 tools/build_client_kit.sh。
 
 ## 1. V1 范围
 
@@ -291,6 +291,19 @@ emitters:
   用 `Player#getListeningPluginChannels()` 判断；未装客户端且有 fallback 的玩家走 PACK/NBS 降级
 - 同一曲目按 `track.id` 去重：多个玩家会话复用同一共享队列句柄；旧句柄停止不会误停新曲
 - Concerto 与真正的 per-player 流播放留待 Phase 2.5 / Phase 5
+
+## 9.6 Phase 3 实现说明（MineUI 音乐界面）
+
+- 页面 JSON 随插件 jar 发布：`assets/mineaudio/ui/mineaudio/player.json`，`/audio ui` 打开
+- 通过 `MineUiHook` 反射加载 `integration/MineUiIntegration`，未装 MineUI 或 API 不匹配时退化为
+  Noop + 聊天提示（与 MineChess / MineSkin 的集成模式一致，`compileOnly` MineUI API）
+- 服务端权威状态：打开时 `snapshot()`，之后每秒（刷新任务）与每次操作后推送增量
+- 已实现：当前播放（标题/作者/状态/Backend/来源）、暂停/继续/停止、停止环境音、曲目列表
+  自己/全服点播、流媒体客户端能力提示
+- 未实现（依赖 MoeMusic 对外能力）：搜索、队列、音量实时调节、歌词、进度条
+- 客户端安装包：`tools/build_client_kit.sh` 从 Modrinth 解析 Fabric 26.2 版本，
+  打包 MineUI 客户端 + MoeMusic + Bad Packets + Fabric Language Kotlin + Fabric API +
+  Cloth Config/Mod Menu（可选）+ Fabric 安装器与中文安装说明
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 

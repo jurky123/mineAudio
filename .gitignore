@@ -9,6 +9,10 @@ target/
 pack/out/
 *.zip
 
+# 客户端安装包与下载缓存
+tools/out/
+tools/cache/
+
 # IDE
 .idea/
 *.iml

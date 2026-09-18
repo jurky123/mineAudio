@@ -18,6 +18,9 @@ import com.mineaudio.region.RegionManager;
 import com.mineaudio.stream.MoeMusicProvider;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
+import com.mineaudio.ui.AudioUi;
+import com.mineaudio.ui.MineUiHook;
+import com.mineaudio.ui.NoopAudioUi;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -34,6 +37,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final EmitterManager emitterManager = new EmitterManager(this);
     private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
+    private AudioUi audioUi = new NoopAudioUi();
 
     @Override
     public void onEnable() {
@@ -57,6 +61,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         PlayerStreamStatus streamStatus = new PlayerStreamStatus(this);
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends,
                 packStatus, streamStatus);
+        audioUi = MineUiHook.create(this);
         MineAudioProvider.register(orchestrator);
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
         Bukkit.getPluginManager().registerEvents(emitterManager, this);
@@ -77,6 +82,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         MineAudioProvider.unregister();
+        audioUi.shutdown();
         regionManager.stop();
         emitterManager.stop();
         if (orchestrator != null) {
@@ -165,6 +171,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public EmitterManager emitterManager() {
         return emitterManager;
+    }
+
+    public AudioUi audioUi() {
+        return audioUi;
     }
 
     public boolean debug() {

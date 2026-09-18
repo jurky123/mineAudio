@@ -7,6 +7,8 @@ author: ubuntu
 softdepend:
   - PackHost
   - NoteBlockAPI
+  - MoeMusic
+  - MineUI
 commands:
   audio:
     description: MineAudio 主命令
