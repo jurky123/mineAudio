@@ -2,6 +2,8 @@
 
 > 依据：[初步设计文档](../初步设计文档) §69 / §77。
 > 核心原则：MineAudio 负责 **WHEN / WHO / WHERE / WHAT**，Backend 负责 **HOW**。
+>
+> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成，运行时联机验收待部署服务器。
 
 ## 1. V1 范围
 
@@ -62,7 +64,7 @@ mineAudio/
 │   ├── MineAudioPlugin.java
 │   ├── track/       TrackRegistry / CueRegistry / TrackParser
 │   ├── playback/    AudioOrchestrator / PlaybackSession / PlayerAudioState
-│   ├── backend/     AudioBackend / PackBackend / VanillaBackend / NbsBackend
+│   ├── backend/     AudioBackend / SoundBackend（PACK+Vanilla 共用）/ NbsBackend
 │   ├── region/      AudioRegion / RegionShape / RegionManager / SpatialIndex
 │   ├── emitter/     AudioEmitter / EmitterManager
 │   ├── listener/    PlayerConnectionListener / PackStatusListener / InteractListener
@@ -266,6 +268,11 @@ emitters:
 | M5 Emitter | 模型、ALWAYS/REDSTONE/COMMAND/INTERACT、位置声、emitter 命令持久化 | 红石开关验证、距离衰减 |
 | M6 资源包 | pack/、gen_pack.py、示例音频、deploy.sh 联动 PackHost | 客户端听到自定义音效 |
 | M7 收尾 | README（命令/配置/素材规范）、V1 验收走查 | §77 清单（业务接入除外）逐项通过 |
+
+实际实现说明：
+- `PackBackend` 与 `VanillaBackend` 播放机制一致，合并为 `SoundBackend`，PACK 的可用性判断由 Orchestrator 选源时处理
+- Emitter 触发 V1 支持 `ALWAYS / REDSTONE / COMMAND / INTERACT`；`PROXIMITY` 解析时降级为 `ALWAYS` 并告警，留待 Phase 4
+- World BGM 采用 `regions.yml` 的 `worlds:` 段（已确认）
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 
