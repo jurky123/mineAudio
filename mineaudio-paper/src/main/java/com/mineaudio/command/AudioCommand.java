@@ -26,6 +26,8 @@ import com.mineaudio.api.AudioSource;
 import com.mineaudio.api.AudioTrack;
 import com.mineaudio.api.Audience;
 import com.mineaudio.api.PlaybackHandle;
+import com.mineaudio.client.ClientConnectionRegistry;
+import com.mineaudio.client.ClientPlaybackStateCache;
 import com.mineaudio.emitter.AudioEmitter;
 import com.mineaudio.emitter.Trigger;
 import com.mineaudio.playback.AudioOrchestrator;
@@ -532,6 +534,22 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                 .map(now -> now.artist().isBlank() ? now.title() : now.title() + " - " + now.artist())
                 .orElse("无");
         sender.sendMessage(Component.text("  MoeMusic 正在播放：" + moeNow, NamedTextColor.GRAY));
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            ClientConnectionRegistry.ClientInfo info = plugin.clientProtocol().registry().get(player);
+            if (info != null) {
+                sender.sendMessage(Component.text("  [" + player.getName() + "] MineAudio Client "
+                        + info.modVersion() + " mc=" + info.minecraft()
+                        + " caps=" + info.capabilities(), NamedTextColor.GRAY));
+            }
+            for (ClientPlaybackStateCache.Snapshot snapshot : plugin.clientProtocol().stateCache().snapshots(player)) {
+                sender.sendMessage(Component.text("    session " + snapshot.sessionId().substring(0, 8)
+                        + " " + snapshot.state()
+                        + " " + snapshot.displayPositionMs() + "/" + snapshot.durationMs() + "ms"
+                        + " buffer=" + snapshot.bufferedMs() + "ms"
+                        + " rtt=" + snapshot.rttMs() + "ms drift=" + snapshot.driftMs() + "ms",
+                        NamedTextColor.GRAY));
+            }
+        }
         if (sender instanceof Player player) {
             AudioCapabilities capabilities = orchestrator.capabilities(player);
             sender.sendMessage(Component.text("  能力：vanillaClient=" + capabilities.vanillaClient()

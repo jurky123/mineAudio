@@ -13,9 +13,17 @@ MINEUI_VERSION="$(grep -E '^mineui_version=' "$MINEUI_DIR/gradle.properties" | c
 MINEUI_JAR="$MINEUI_DIR/mineui-client/build/libs/mineui-client-$MINEUI_VERSION.jar"
 FABRIC_INSTALLER_JAR="$CACHE/fabric-installer-$FABRIC_INSTALLER_VERSION.jar"
 
+AUDIO_VERSION="$(grep -E '^mineaudio_version=' "$ROOT/gradle.properties" | cut -d= -f2)"
+AUDIO_JAR="$ROOT/mineaudio-client-fabric-26.2/build/libs/mineaudio-client-26.2-$AUDIO_VERSION.jar"
+
 if [ ! -f "$MINEUI_JAR" ]; then
     echo "缺少 MineUI 客户端 jar，先构建 MineUI ..."
     (cd "$MINEUI_DIR" && ./gradlew :mineui-client:build -q)
+fi
+
+if [ ! -f "$AUDIO_JAR" ]; then
+    echo "缺少 MineAudio 客户端 jar，先构建 ..."
+    (cd "$ROOT" && ./gradlew :mineaudio-client-fabric-26.2:build -q)
 fi
 
 mkdir -p "$CACHE" "$OUT_DIR"
@@ -64,6 +72,7 @@ fi
 
 mkdir -p "$STAGE/mods"
 cp "$MINEUI_JAR" "$STAGE/mods/"
+cp "$AUDIO_JAR" "$STAGE/mods/"
 for path in "${MODS[@]}"; do
     cp "$path" "$STAGE/mods/"
 done
@@ -75,8 +84,9 @@ MineAudio 客户端安装说明
 用于连接服务器 43.160.211.42:25565 的音乐与界面功能。
 
 包内容（mods/ 目录）：
-- mineui-client-$MINEUI_VERSION.jar   MineUI 客户端（/audio ui 音乐界面必需）
-- $(basename "${MODS[0]}")   MoeMusic 客户端（流媒体播放必需）
+- mineaudio-client-26.2-$AUDIO_VERSION.jar  MineAudio 流媒体客户端（服务端直控播放，推荐）
+- mineui-client-$MINEUI_VERSION.jar   MineUI 客户端（/mineaudio ui 音乐界面必需）
+- $(basename "${MODS[0]}")   MoeMusic 客户端（Legacy 流媒体路径；装了 MineAudio Client 可不装）
 - $(basename "${MODS[1]}")   Bad Packets（MoeMusic 前置）
 - $(basename "${MODS[2]}")   Fabric Language Kotlin（MoeMusic 前置）
 - $(basename "${MODS[3]}")   Fabric API（必需）
@@ -100,9 +110,10 @@ Linux:   ~/.minecraft/mods
 
 第 3 步：启动与验证
 1) 启动器选择 Fabric 26.2 启动游戏，进入服务器
-2) 输入 /audio ui：打开点歌/播放界面（需要 MineUI 客户端）
+2) 输入 /mineaudio ui：打开点歌/播放界面（需要 MineUI 客户端）
 3) 按 M：打开 MoeMusic 播放器（搜索、队列、歌词）
-4) /audio debug 里 "流媒体客户端：已连接" 即 MineAudio 已识别你的 MoeMusic
+4) /mineaudio debug：出现 "MineAudio Client 0.1.0 mc=26.2 caps=[...]" 即握手成功
+5) /audio debug 里 "流媒体客户端：已连接" 即 MineAudio 已识别你的客户端
 
 排查：
 - /mineaudio ui 提示需要 MineUI 客户端：确认 mineui-client jar 已放入 mods

@@ -34,6 +34,7 @@ repositories {
 dependencies {
     compileOnly "io.papermc.paper:paper-api:${paper_version}"
     compileOnly project(':mineaudio-api')
+    compileOnly project(':mineaudio-protocol')
     compileOnly "com.github.koca2000:NoteBlockAPI:${noteblockapi_version}"
     // MineUI 业务 API（可选集成：未安装时退化为聊天状态）
     compileOnly "com.mineui:mineui-paper:${mineui_version}"
@@ -62,7 +63,8 @@ processResources {
 
 jar {
     archiveBaseName = 'MineAudio'
-    // 把纯 Java API 模块内嵌进插件 jar，业务插件编译期引用、运行期不额外带依赖
+    // 把纯 Java API / 协议模块内嵌进插件 jar，业务插件编译期引用、运行期不额外带依赖
     from { project(':mineaudio-api').sourceSets.main.output }
-    dependsOn ':mineaudio-api:classes'
+    from { project(':mineaudio-protocol').sourceSets.main.output }
+    dependsOn ':mineaudio-api:classes', ':mineaudio-protocol:classes'
 }

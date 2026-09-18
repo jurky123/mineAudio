@@ -1,4 +1,18 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = 'mineaudio'
 
 include 'mineaudio-api'
+include 'mineaudio-protocol'
 include 'mineaudio-paper'
+include 'mineaudio-client-core'
+include 'mineaudio-client-fabric-26.2'

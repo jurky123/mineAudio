@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 
 import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.AudioTrack;
+import com.mineaudio.client.ClientPlaybackStateCache;
 import com.mineaudio.playback.PlaybackSession;
 import com.mineaudio.stream.MoeMusicNowPlaying;
 
@@ -53,18 +54,31 @@ public final class MineAudioPlaceholders extends PlaceholderExpansion {
         Player online = player.getPlayer();
         if (online == null) return "";
         PlaybackSession music = plugin.orchestrator().currentMusic(online);
+        ClientPlaybackStateCache.Snapshot client = plugin.clientProtocol() == null
+                ? null : plugin.clientProtocol().stateCache().latest(online);
         return switch (params.toLowerCase(Locale.ROOT)) {
-            case "playing" -> isPlaying(music) ? "yes" : "no";
+            case "playing" -> isPlaying(music, client) ? "yes" : "no";
             case "stream" -> plugin.orchestrator().streamAvailable(online) ? "yes" : "no";
             case "title" -> music != null ? titleOf(music.track()) : moeMusicTitle();
             case "artist" -> music != null ? music.track().metadata().author() : moeMusicArtist();
             case "nowplaying" -> nowPlaying(music);
+            case "state" -> client == null ? "" : client.state();
+            case "position" -> client == null ? "" : formatMs(client.displayPositionMs());
+            case "duration" -> client == null ? "" : formatMs(client.durationMs());
+            case "progress" -> client == null || client.durationMs() <= 0 ? ""
+                    : Math.round(100.0 * client.displayPositionMs() / client.durationMs()) + "%";
             default -> null;
         };
     }
 
-    private boolean isPlaying(PlaybackSession music) {
-        return music != null || plugin.moeMusicNowPlaying().query().isPresent();
+    private boolean isPlaying(PlaybackSession music, ClientPlaybackStateCache.Snapshot client) {
+        return music != null || client != null || plugin.moeMusicNowPlaying().query().isPresent();
+    }
+
+    private static String formatMs(long ms) {
+        if (ms <= 0) return "00:00";
+        long totalSeconds = ms / 1000;
+        return String.format("%02d:%02d", totalSeconds / 60, totalSeconds % 60);
     }
 
     private String moeMusicTitle() {

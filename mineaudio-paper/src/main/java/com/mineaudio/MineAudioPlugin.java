@@ -6,6 +6,8 @@ import com.mineaudio.backend.BackendRegistry;
 import com.mineaudio.backend.NbsBackend;
 import com.mineaudio.backend.SoundBackend;
 import com.mineaudio.backend.StreamBackend;
+import com.mineaudio.client.ClientProtocolService;
+import com.mineaudio.client.MineAudioClientProvider;
 import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
 import com.mineaudio.config.YamlNode;
@@ -39,6 +41,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final EmitterManager emitterManager = new EmitterManager(this);
     private final MoeMusicNowPlaying moeMusicNowPlaying = new MoeMusicNowPlaying(this);
     private NbsBackend nbsBackend;
+    private ClientProtocolService clientProtocol;
     private AudioOrchestrator orchestrator;
     private AudioUi audioUi = new NoopAudioUi();
     private Runnable placeholderUnregister = () -> {
@@ -56,14 +59,17 @@ public final class MineAudioPlugin extends JavaPlugin {
         } else {
             getLogger().info("未检测到 NoteBlockAPI，NBS Backend 不可用（PACK / Vanilla 不受影响）");
         }
+        clientProtocol = new ClientProtocolService(this);
+        clientProtocol.register();
         StreamBackend streamBackend = new StreamBackend(this);
+        streamBackend.register(new MineAudioClientProvider(this, clientProtocol));
         streamBackend.register(new MoeMusicLegacyProvider(this));
         backends.register(streamBackend);
         if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
             getLogger().info("未检测到 MoeMusic，流媒体 Legacy 路径不可用（安装 MineAudio Client 后不受影响）");
         }
         PlayerPackStatus packStatus = new PlayerPackStatus(this);
-        PlayerStreamStatus streamStatus = new PlayerStreamStatus(this);
+        PlayerStreamStatus streamStatus = new PlayerStreamStatus(this, clientProtocol);
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends,
                 packStatus, streamStatus);
         audioUi = MineUiHook.create(this);
@@ -90,6 +96,9 @@ public final class MineAudioPlugin extends JavaPlugin {
         MineAudioProvider.unregister();
         placeholderUnregister.run();
         audioUi.shutdown();
+        if (clientProtocol != null) {
+            clientProtocol.unregister();
+        }
         regionManager.stop();
         emitterManager.stop();
         if (orchestrator != null) {
@@ -186,6 +195,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public MoeMusicNowPlaying moeMusicNowPlaying() {
         return moeMusicNowPlaying;
+    }
+
+    public ClientProtocolService clientProtocol() {
+        return clientProtocol;
     }
 
     public boolean debug() {

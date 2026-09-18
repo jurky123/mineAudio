@@ -4,10 +4,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import com.mineaudio.MineAudioPlugin;
+import com.mineaudio.client.ClientCapabilities;
+import com.mineaudio.client.ClientConnectionRegistry;
+import com.mineaudio.client.ClientProtocolService;
 
 /**
- * 玩家流媒体能力：MoeMusic 客户端 mod 会注册 {@code moemusic:client_handshake}
- * 通道，通过 Bukkit 的客户端通道列表即可探测。
+ * 玩家流媒体能力：优先看 MineAudio Client 握手，其次 MoeMusic 客户端通道。
  */
 public final class PlayerStreamStatus {
 
@@ -15,13 +17,18 @@ public final class PlayerStreamStatus {
     public static final String MOEMUSIC_CHANNEL = "moemusic:client_handshake";
 
     private final MineAudioPlugin plugin;
+    private final ClientProtocolService protocol;
 
-    public PlayerStreamStatus(MineAudioPlugin plugin) {
+    public PlayerStreamStatus(MineAudioPlugin plugin, ClientProtocolService protocol) {
         this.plugin = plugin;
+        this.protocol = protocol;
     }
 
-    /** MoeMusic 服务端插件存在且该玩家装有 MoeMusic 客户端时才可流播放。 */
     public boolean streamAvailable(Player player) {
+        ClientConnectionRegistry.ClientInfo info = protocol.registry().get(player);
+        if (info != null && info.supports(ClientCapabilities.STREAM_PLAYBACK)) {
+            return true;
+        }
         if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
             return false;
         }
