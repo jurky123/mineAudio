@@ -256,6 +256,10 @@ lines:
 ```text
 /mineaudio play <曲目> [self|player <玩家>|world <世界>|global]
 /mineaudio stop [MUSIC|AMBIENT|SFX|UI] [self|player <玩家>|world <世界>|global]
+/mineaudio pause [玩家]                              # 暂停当前音乐（下发客户端执行）
+/mineaudio resume [玩家]                             # 继续
+/mineaudio seek <毫秒|mm:ss> [玩家]                  # 定位，如 90000 或 1:30
+/mineaudio volume <0-100> [玩家]                     # 运行时音量
 
 /mineaudio region list
 /mineaudio region pos1 | pos2                       # 记录准星方块（5 格内）
