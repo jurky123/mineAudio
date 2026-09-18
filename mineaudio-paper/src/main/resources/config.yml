@@ -63,6 +63,8 @@ resolvers:
     enabled: true
     # 从环境变量读取 MUSIC_U（等同 bearer 凭证，不要写进配置文件/提交到仓库）
     credential-env: "MINEAUDIO_NETEASE_MUSIC_U"
+    # 备选：从文件读取一行凭证（便于 systemd/容器部署）；env 优先
+    credential-file: ""
     # 音质：standard / higher / exhigh / lossless / hires
     level: "exhigh"
     timeout-ms: 5000

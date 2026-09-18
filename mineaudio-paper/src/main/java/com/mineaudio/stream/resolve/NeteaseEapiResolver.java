@@ -57,7 +57,8 @@ public final class NeteaseEapiResolver implements StreamResolver {
                 .build();
     }
 
-    public record Config(boolean enabled, String credentialEnv, String level, int timeoutMs, int maxConcurrent) {
+    public record Config(boolean enabled, String credentialEnv, String credentialFile,
+                         String level, int timeoutMs, int maxConcurrent) {
     }
 
     @Override
@@ -205,10 +206,30 @@ public final class NeteaseEapiResolver implements StreamResolver {
         return credential == null || credential.isBlank() ? base : base + "; MUSIC_U=" + credential;
     }
 
-    /** 凭证只从环境变量读取；返回 null 表示未配置（匿名尝试）。 */
+    /** 凭证优先读环境变量，其次读凭证文件（一行，支持 # 注释）；返回 null 表示未配置。 */
     private String credential() {
         String env = config.credentialEnv();
-        return env == null || env.isBlank() ? null : System.getenv(env);
+        if (env != null && !env.isBlank()) {
+            String value = System.getenv(env);
+            if (value != null && !value.isBlank()) return value.trim();
+        }
+        String file = config.credentialFile();
+        if (file == null || file.isBlank()) return null;
+        try {
+            java.nio.file.Path path = java.nio.file.Path.of(file);
+            if (!java.nio.file.Files.isRegularFile(path)) return null;
+            for (String line : java.nio.file.Files.readAllLines(path, java.nio.charset.StandardCharsets.UTF_8)) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) return trimmed;
+            }
+        } catch (Exception e) {
+            return null;
+        }
+        return null;
+    }
+
+    public boolean hasCredential() {
+        return credential() != null;
     }
 
     private static ResolveException mapTransportError(Throwable error) {

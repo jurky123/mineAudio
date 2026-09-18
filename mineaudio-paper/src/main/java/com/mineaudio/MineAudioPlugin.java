@@ -174,15 +174,14 @@ public final class MineAudioPlugin extends JavaPlugin {
         boolean neteaseEnabled = getConfig().getBoolean("resolvers.netease.enabled", true);
         String credentialEnv = getConfig().getString("resolvers.netease.credential-env",
                 "MINEAUDIO_NETEASE_MUSIC_U");
+        String credentialFile = getConfig().getString("resolvers.netease.credential-file", "");
         String level = getConfig().getString("resolvers.netease.level", "exhigh");
         int timeoutMs = getConfig().getInt("resolvers.netease.timeout-ms", 5000);
         int maxConcurrent = getConfig().getInt("resolvers.netease.max-concurrent", 4);
-        boolean credentialPresent = credentialEnv != null && !credentialEnv.isBlank()
-                && System.getenv(credentialEnv) != null && !System.getenv(credentialEnv).isBlank();
         NeteaseEapiResolver netease = new NeteaseEapiResolver(new NeteaseEapiResolver.Config(
-                neteaseEnabled, credentialEnv, level, timeoutMs, maxConcurrent));
+                neteaseEnabled, credentialEnv, credentialFile, level, timeoutMs, maxConcurrent));
         if (neteaseEnabled) {
-            getLogger().info("网易解析器已启用（凭证：" + (credentialPresent ? "已配置" : "未配置，仅匿名")
+            getLogger().info("网易解析器已启用（凭证：" + (netease.hasCredential() ? "已配置" : "未配置，仅匿名")
                     + "，音质：" + level + "）");
         }
         return new StreamResolverChain(java.util.List.of(new DirectUrlResolver(), netease));
