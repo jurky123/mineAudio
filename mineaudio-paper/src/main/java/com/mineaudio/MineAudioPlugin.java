@@ -11,6 +11,7 @@ import com.mineaudio.config.YamlNode;
 import com.mineaudio.listener.PlayerConnectionListener;
 import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
+import com.mineaudio.region.RegionManager;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 import org.bukkit.Bukkit;
@@ -25,6 +26,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final TrackRegistry trackRegistry = new TrackRegistry();
     private final CueRegistry cueRegistry = new CueRegistry();
     private final BackendRegistry backends = new BackendRegistry();
+    private final RegionManager regionManager = new RegionManager(this);
     private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
 
@@ -44,6 +46,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends, packStatus);
         MineAudioProvider.register(orchestrator);
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
+        regionManager.start();
 
         AudioCommand command = new AudioCommand(this, orchestrator);
         PluginCommand audio = getCommand("audio");
@@ -59,17 +62,19 @@ public final class MineAudioPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         MineAudioProvider.unregister();
+        regionManager.stop();
         if (orchestrator != null) {
             orchestrator.shutdown();
         }
         getLogger().info("MineAudio 已停用");
     }
 
-    /** 重载 config.yml / tracks.yml / cues.yml 与 NBS 曲目。 */
+    /** 重载 config.yml / tracks.yml / cues.yml / regions.yml 与 NBS 曲目。 */
     public void reloadAudio() {
         reloadConfig();
         loadTracks();
         loadCues();
+        loadRegions();
         if (nbsBackend != null) {
             nbsBackend.reload();
         }
@@ -93,6 +98,15 @@ public final class MineAudioPlugin extends JavaPlugin {
         }
     }
 
+    private void loadRegions() {
+        try {
+            YamlNode root = YamlFile.load(dataFile("regions.yml"));
+            regionManager.load(root);
+        } catch (Exception e) {
+            getLogger().warning("读取 regions.yml 失败：" + e.getMessage());
+        }
+    }
+
     private File dataFile(String name) {
         File file = new File(getDataFolder(), name);
         if (!file.exists()) saveResource(name, false);
@@ -113,6 +127,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public AudioOrchestrator orchestrator() {
         return orchestrator;
+    }
+
+    public RegionManager regionManager() {
+        return regionManager;
     }
 
     public boolean debug() {

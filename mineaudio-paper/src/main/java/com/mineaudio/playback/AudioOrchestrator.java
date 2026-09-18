@@ -93,11 +93,12 @@ public final class AudioOrchestrator implements MineAudio {
             debug("未知音效 " + cueKey);
             return;
         }
-        AudioSource source = resolve(trackOf(cue), player);
+        AudioTrack track = trackOf(cue);
+        AudioSource source = resolve(track, player);
         if (source == null) return;
         AudioBackend backend = backends.find(source).orElse(null);
         if (backend != null) {
-            backend.play(player, trackOf(cue), source, cue.options());
+            backend.play(player, track, source, cue.options());
         }
     }
 
@@ -109,8 +110,8 @@ public final class AudioOrchestrator implements MineAudio {
             return;
         }
         AudioTrack track = trackOf(cue);
-        // 位置音效面向附近玩家播放，资源包可用性按"任一附近玩家"无法统一，默认走 fallback 逻辑
-        AudioSource source = resolve(track, location.getWorld() == null ? null : nearbyPlayer(location));
+        Player nearest = location.getWorld() == null ? null : nearbyPlayer(location);
+        AudioSource source = resolve(track, nearest);
         if (source == null) return;
         AudioBackend backend = backends.find(source).orElse(null);
         if (backend != null) {
@@ -188,6 +189,50 @@ public final class AudioOrchestrator implements MineAudio {
         cues.unregister(owner);
     }
 
+    // ---------- Region / World 层 ----------
+
+    /** 播放受管会话（REGION / WORLD）：不覆盖业务 API 的显式点播。 */
+    public PlaybackSession playManaged(Player player, AudioTrack track, PlaybackOrigin origin) {
+        if (origin == PlaybackOrigin.API) {
+            throw new IllegalArgumentException("playManaged 不接受 API 来源");
+        }
+        return startPlayer(player, track, track.options(), origin);
+    }
+
+    public PlaybackSession playManagedAmbient(Player player, AudioTrack track) {
+        return startPlayer(player, track, track.options(), PlaybackOrigin.REGION);
+    }
+
+    public PlaybackSession currentMusic(Player player) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        return state == null ? null : state.music();
+    }
+
+    public List<PlaybackSession> sessions(Player player) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        return state == null ? List.of() : state.sessions();
+    }
+
+    /** 停止玩家当前受管 MUSIC（区域/世界层），不动 API 点播。 */
+    public boolean stopManagedMusic(Player player) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        if (state == null || state.music() == null || state.music().origin() == PlaybackOrigin.API) {
+            return false;
+        }
+        stopOne(player, state, state.music());
+        return true;
+    }
+
+    /** 停止玩家某条受管 AMBIENT（区域层），不动 API 点播。 */
+    public boolean stopManagedAmbient(Player player, Key trackId) {
+        PlayerAudioState state = states.get(player.getUniqueId());
+        if (state == null) return false;
+        PlaybackSession session = state.ambient(trackId);
+        if (session == null || session.origin() == PlaybackOrigin.API) return false;
+        stopOne(player, state, session);
+        return true;
+    }
+
     // ---------- 生命周期 ----------
 
     public void onJoin(Player player) {
@@ -228,12 +273,11 @@ public final class AudioOrchestrator implements MineAudio {
 
     /** /audio debug：列出该玩家当前会话。 */
     public List<String> describe(Player player) {
-        PlayerAudioState state = states.get(player.getUniqueId());
-        if (state == null) return List.of();
         List<String> lines = new ArrayList<>();
-        for (PlaybackSession playback : state.sessions()) {
+        for (PlaybackSession playback : sessions(player)) {
             lines.add(playback.track().bus() + " " + playback.track().id()
                     + " via " + playback.backend()
+                    + " [" + playback.origin() + "]"
                     + (playback.options().loop() ? " (loop)" : ""));
         }
         return lines;
@@ -294,34 +338,47 @@ public final class AudioOrchestrator implements MineAudio {
     private void startFor(ActiveSession session, Player player) {
         UUID playerId = player.getUniqueId();
         if (session.players.containsKey(playerId)) return;
-        AudioTrack track = session.track;
+        PlaybackSession playback = startPlayer(player, session.track, session.options, PlaybackOrigin.API);
+        if (playback != null) {
+            session.players.put(playerId, playback);
+        }
+    }
+
+    /** 启动一次单玩家播放；被更高优先级会话拒绝或无法选源时返回 null。 */
+    private PlaybackSession startPlayer(Player player, AudioTrack track, PlaybackOptions options,
+                                        PlaybackOrigin origin) {
         Optional<AudioSource> resolved = SourceResolver.resolve(track,
                 packStatus.packAvailable(player), backends::canPlay);
         if (resolved.isEmpty()) {
             debug(player.getName() + " 无法播放 " + track.id() + "（Backend 或资源包不可用且无 fallback）");
-            return;
+            return null;
+        }
+        PlayerAudioState state = states.computeIfAbsent(player.getUniqueId(), PlayerAudioState::new);
+        PlaybackSession candidate = new PlaybackSession(UUID.randomUUID(), track, resolved.get(),
+                options, NoopPlaybackHandle.stopped(), null, origin);
+        if (!state.accepts(candidate)) {
+            return null;
         }
         AudioPlayEvent playEvent = new AudioPlayEvent(player, track);
         Bukkit.getPluginManager().callEvent(playEvent);
-        if (playEvent.isCancelled()) return;
+        if (playEvent.isCancelled()) return null;
         AudioBackend backend = backends.find(resolved.get()).orElse(null);
-        if (backend == null) return;
+        if (backend == null) return null;
 
-        PlaybackHandle handle = backend.play(player, track, resolved.get(), session.options);
-        PlaybackSession playback = new PlaybackSession(UUID.randomUUID(), track, resolved.get(),
-                session.options, handle, backend.id());
-        PlayerAudioState state = states.computeIfAbsent(playerId, PlayerAudioState::new);
+        PlaybackHandle handle = backend.play(player, track, resolved.get(), options);
+        PlaybackSession playback = new PlaybackSession(candidate.id(), track, resolved.get(),
+                options, handle, backend.id(), origin);
         PlaybackSession previous = state.replace(playback);
-        if (previous != null && previous != playback) {
-            removeFromActiveSessions(playerId, previous);
+        if (previous != null) {
+            removeFromActiveSessions(player.getUniqueId(), previous);
             stopPlayback(player, previous);
         }
-        session.players.put(playerId, playback);
-        scheduleFinish(player, session, playback);
+        scheduleFinish(player, playback);
         Bukkit.getPluginManager().callEvent(new TrackStartedEvent(player, track));
+        return playback;
     }
 
-    private void scheduleFinish(Player player, ActiveSession session, PlaybackSession playback) {
+    private void scheduleFinish(Player player, PlaybackSession playback) {
         if (playback.options().loop()) return;
         long duration = playback.track().metadata().durationMs();
         if (duration <= 0) {
@@ -334,16 +391,18 @@ public final class AudioOrchestrator implements MineAudio {
         long ticks = Math.max(1, duration / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             finishTasks.remove(playback.id());
-            session.players.remove(player.getUniqueId());
             PlayerAudioState state = states.get(player.getUniqueId());
             if (state != null) state.remove(playback);
-            if (session.players.isEmpty() && !session.options.loop()) {
-                session.state = PlaybackState.FINISHED;
-                activeSessions.remove(session.id());
-            }
+            removeFromActiveSessions(player.getUniqueId(), playback);
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, playback.track()));
         }, ticks);
         finishTasks.put(playback.id(), task);
+    }
+
+    private void stopOne(Player player, PlayerAudioState state, PlaybackSession playback) {
+        state.remove(playback);
+        removeFromActiveSessions(player.getUniqueId(), playback);
+        stopPlayback(player, playback);
     }
 
     private void stopPlayback(Player player, PlaybackSession playback) {

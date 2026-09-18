@@ -25,7 +25,7 @@ class PlayerAudioStateTest {
                 new AudioSource.VanillaSound(Key.key("minecraft:ui.button.click")),
                 PlaybackOptions.DEFAULT, AudioMetadata.EMPTY);
         return new PlaybackSession(UUID.randomUUID(), track, track.primary(),
-                PlaybackOptions.DEFAULT, NoopPlaybackHandle.stopped(), "test");
+                PlaybackOptions.DEFAULT, NoopPlaybackHandle.stopped(), "test", PlaybackOrigin.API);
     }
 
     @Test

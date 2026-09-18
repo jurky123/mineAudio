@@ -1,0 +1,27 @@
+# MineAudio 区域配置
+#
+# worlds：世界层（priority 0），玩家不在任何 region 内时生效
+# worlds:
+#   world:
+#     music: spawn
+#     ambient: [birds]
+#
+# regions：区域，重叠时 MUSIC 取最高 priority，AMBIENT 并放（受 max-ambient-layers 限制）
+# regions:
+#   tavern:
+#     world: world
+#     shape:
+#       type: CUBOID             # CUBOID | SPHERE
+#       min: { x: 100, y: 60, z: -40 }
+#       max: { x: 150, y: 80, z: -10 }
+#     priority: 20
+#     music: tavern
+#     ambient: [fireplace, rain]
+#     fade-in-ms: 1000
+#     fade-out-ms: 1000
+#     enter-delay-ms: 300        # 可选，默认取 config.yml
+#     exit-delay-ms: 500
+#
+# 也可以用 /audio region 命令在游戏内创建与修改（会写回本文件，注释会丢失）
+worlds: {}
+regions: {}

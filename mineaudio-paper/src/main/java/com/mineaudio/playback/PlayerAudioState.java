@@ -11,7 +11,7 @@ import net.kyori.adventure.key.Key;
 
 /**
  * 每玩家音频状态：MUSIC 单会话，AMBIENT 可多层（按曲目 ID 去重），
- * SFX / UI 短音效不落表。
+ * SFX / UI 短音效不落表。API 显式点播的会话不会被区域/世界层顶替。
  */
 public final class PlayerAudioState {
 
@@ -25,6 +25,20 @@ public final class PlayerAudioState {
 
     public UUID playerId() {
         return playerId;
+    }
+
+    /** 新会话能否顶替当前同 Bus 会话。 */
+    public boolean accepts(PlaybackSession incoming) {
+        return switch (incoming.track().bus()) {
+            case MUSIC -> music == null || music.origin() != PlaybackOrigin.API
+                    || incoming.origin() == PlaybackOrigin.API;
+            case AMBIENT -> {
+                PlaybackSession existing = ambient.get(incoming.track().id());
+                yield existing == null || existing.origin() != PlaybackOrigin.API
+                        || incoming.origin() == PlaybackOrigin.API;
+            }
+            case SFX, UI -> true;
+        };
     }
 
     /** 放入会话，返回被顶替的同 Bus 会话（用于停止与事件）。 */
@@ -65,6 +79,10 @@ public final class PlayerAudioState {
 
     public PlaybackSession music() {
         return music;
+    }
+
+    public PlaybackSession ambient(Key trackId) {
+        return ambient.get(trackId);
     }
 
     public int ambientCount() {

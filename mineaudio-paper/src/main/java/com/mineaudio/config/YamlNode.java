@@ -1,6 +1,7 @@
 package com.mineaudio.config;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -70,5 +71,15 @@ public final class YamlNode {
     public long longValue(String key, long fallback) {
         double value = number(key, fallback);
         return (long) value;
+    }
+
+    public List<String> stringList(String key) {
+        Object value = map.get(key);
+        if (!(value instanceof List<?> list)) return List.of();
+        List<String> result = new java.util.ArrayList<>();
+        for (Object item : list) {
+            if (item != null) result.add(String.valueOf(item));
+        }
+        return result;
     }
 }

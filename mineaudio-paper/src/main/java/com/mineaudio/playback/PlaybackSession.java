@@ -14,5 +14,6 @@ public record PlaybackSession(
         AudioSource source,
         PlaybackOptions options,
         PlaybackHandle handle,
-        String backend) {
+        String backend,
+        PlaybackOrigin origin) {
 }
