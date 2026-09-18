@@ -99,7 +99,8 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                         sender.sendMessage(Component.text("需要 MineUI 0.11+ 客户端才能显示 HUD",
                                 NamedTextColor.YELLOW));
                     } else if (plugin.audioUi().toggleHud(player)) {
-                        sender.sendMessage(Component.text("已开启“正在播放”HUD", NamedTextColor.GREEN));
+                        sender.sendMessage(Component.text("已开启“正在播放”HUD（关闭界面后可见，F6 可开关）",
+                                NamedTextColor.GREEN));
                     } else {
                         sender.sendMessage(Component.text("已关闭“正在播放”HUD", NamedTextColor.GREEN));
                     }

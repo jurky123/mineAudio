@@ -189,6 +189,12 @@ public final class LavaPlayerDecoder implements AudioDecoder {
     }
 
     @Override
+    public boolean seekable() {
+        AudioTrack t = track;
+        return t != null && t.isSeekable();
+    }
+
+    @Override
     public long positionMs() {
         AudioTrack t = track;
         return t == null ? 0 : t.getPosition();

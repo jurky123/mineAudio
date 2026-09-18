@@ -390,10 +390,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     }
                 });
             }
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                    "[audio] {} session={} pos={}ms started={}",
+                    value ? "PAUSE" : "RESUME", id, decoder.positionMs(), started);
             report();
         }
 
         void seek(long positionMs) {
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                    "[audio] SEEK session={} -> {}ms (was {}ms, seekable={})",
+                    id, positionMs, decoder.positionMs(), decoder.seekable());
             decoder.seek(positionMs);
             ring.clear();
             stream.reset();

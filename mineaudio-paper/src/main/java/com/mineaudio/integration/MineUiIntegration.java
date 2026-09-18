@@ -103,6 +103,7 @@ public final class MineUiIntegration implements AudioUi {
         if (existing != null) {
             stopHudRefresher(playerId);
             if (!existing.closed()) existing.close();
+            plugin.getLogger().info("[ui] " + player.getName() + " HUD 已关闭");
             return false;
         }
         MineUiSession hud = api.openHud(plugin, player, APP, "hud", hudPage,
@@ -111,6 +112,7 @@ public final class MineUiIntegration implements AudioUi {
         pushHud(player);
         hud.snapshot();
         startHudRefresher(player);
+        plugin.getLogger().info("[ui] " + player.getName() + " HUD 已开启");
         return true;
     }
 
@@ -153,10 +155,11 @@ public final class MineUiIntegration implements AudioUi {
             });
             session.on("seek_back", action -> seekBy(player, -SEEK_STEP_MS, session));
             session.on("seek_fwd", action -> seekBy(player, SEEK_STEP_MS, session));
+            session.on("seek_to", action -> seekTo(player, action.number("value", -1), session));
             session.on("vol_down", action -> adjustVolume(player, -0.1f, session));
             session.on("vol_up", action -> adjustVolume(player, 0.1f, session));
             session.on("toggle_hud", action -> {
-                session.state("note", toggleHud(player) ? "已开启 HUD" : "已关闭 HUD");
+                session.state("note", toggleHud(player) ? "已开启 HUD（关闭界面后可见）" : "已关闭 HUD");
                 push(player, session);
             });
             for (int i = 0; i < TRACK_SLOTS; i++) {
@@ -351,6 +354,28 @@ public final class MineUiIntegration implements AudioUi {
             target = Math.min(target, progress.durationMs());
         }
         boolean ok = music.handle().seek(Duration.ofMillis(target));
+        plugin.getLogger().info("[ui] " + player.getName() + " seek "
+                + (deltaMs >= 0 ? "+" : "") + deltaMs + "ms -> " + target + "ms ok=" + ok);
+        session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
+        push(player, session);
+    }
+
+    /** 进度条拖动提交（payload value 为 0-100 百分比）。 */
+    private void seekTo(Player player, double percent, MineUiSession session) {
+        PlaybackSession music = plugin.orchestrator().currentMusic(player);
+        if (music == null) {
+            session.state("note", "当前没有可定位的音乐");
+            return;
+        }
+        ClientPlaybackStateCache.Snapshot progress = snapshotOf(player, music);
+        if (progress == null || progress.durationMs() <= 0) {
+            session.state("note", "当前没有可定位的进度（等客户端上报后可用）");
+            return;
+        }
+        if (percent < 0) return;
+        long target = Math.round(progress.durationMs() * Math.min(100.0, percent) / 100.0);
+        boolean ok = music.handle().seek(Duration.ofMillis(target));
+        plugin.getLogger().info("[ui] " + player.getName() + " seek -> " + target + "ms ok=" + ok);
         session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
         push(player, session);
     }

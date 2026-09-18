@@ -20,6 +20,11 @@ public interface AudioDecoder extends AutoCloseable {
 
     void seek(long positionMs);
 
+    /** 当前音轨是否支持 seek（诊断用）。 */
+    default boolean seekable() {
+        return false;
+    }
+
     long positionMs();
 
     long durationMs();

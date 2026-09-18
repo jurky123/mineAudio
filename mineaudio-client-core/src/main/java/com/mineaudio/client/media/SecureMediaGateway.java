@@ -153,47 +153,49 @@ public final class SecureMediaGateway implements AutoCloseable {
         }
     }
 
-    /** 缓存未命中：逐跳校验重定向后拉取，边发边写 .part，完整结束后提交缓存。 */
+    /** 缓存未命中：带 Range 的请求转发上游（不缓存）；普通请求边发边写 .part，完整结束后提交缓存。 */
     private void fetchAndServe(HttpExchange exchange, Resource resource) throws Exception {
-        URI current = resource.url();
-        firewall.validate(current);
-        HttpResponse<InputStream> response = null;
-        int redirects = 0;
-        for (int hop = 0; hop <= firewall.policy().maxRedirects(); hop++) {
-            HttpRequest.Builder builder = HttpRequest.newBuilder(current)
-                    .timeout(Duration.ofMinutes(10))
-                    .GET();
-            if (resource.headers() != null) {
-                resource.headers().forEach((name, value) -> {
-                    if (isAllowedHeader(name)) builder.header(name, value);
-                });
-            }
-            response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
-            int status = response.statusCode();
-            if (status >= 300 && status < 400) {
-                String location = response.headers().firstValue("Location").orElse(null);
-                response.body().close();
-                if (location == null) throw new MediaSecurityException("HTTP_3XX", "redirect without location");
-                redirects++;
-                if (redirects > firewall.policy().maxRedirects()) {
-                    throw new MediaSecurityException("FIREWALL_REJECTED", "too many redirects");
-                }
-                current = firewall.validateRedirect(current.resolve(location));
-                continue;
-            }
-            if (status == 401 || status == 403 || status == 410 || status == 404 || status >= 400) {
-                response.body().close();
-                throw new MediaSecurityException("HTTP_" + status, "upstream status " + status);
-            }
-            break;
+        String range = exchange.getRequestHeaders().getFirst("Range");
+        if (range != null && !range.isBlank()) {
+            proxyRange(exchange, resource, range);
+            return;
         }
-        if (response == null) throw new IOException("no response");
+        serveFull(exchange, resource);
+    }
 
+    /** 转发单段 Range 请求（seek 用）：上游返回 206 时透传，200/416 原样返回。 */
+    private void proxyRange(HttpExchange exchange, Resource resource, String range) throws Exception {
+        HttpResponse<InputStream> response = openUpstream(resource, range);
+        int status = response.statusCode();
+        if (status == 416) {
+            response.body().close();
+            exchange.sendResponseHeaders(416, -1);
+            return;
+        }
+        if (status != 206) {
+            response.body().close();
+            serveFull(exchange, resource);
+            return;
+        }
+        long contentLength = response.headers().firstValueAsLong("Content-Length").orElse(0);
+        exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
+        exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
+        response.headers().firstValue("Content-Range")
+                .ifPresent(value -> exchange.getResponseHeaders().set("Content-Range", value));
+        exchange.sendResponseHeaders(206, contentLength);
+        try (InputStream in = response.body()) {
+            transfer(in, exchange.getResponseBody(), contentLength > 0 ? contentLength : Long.MAX_VALUE);
+        }
+    }
+
+    /** 全量拉取：逐跳校验重定向，边发边写 .part，完整结束后提交缓存。 */
+    private void serveFull(HttpExchange exchange, Resource resource) throws Exception {
+        HttpResponse<InputStream> response = openUpstream(resource, null);
         boolean cacheEnabled = cache.directory() != null;
         Path part = cacheEnabled ? cache.partFor(resource.cacheKey()) : null;
         OutputStream fileOut = part == null ? null : Files.newOutputStream(part);
         exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
-        exchange.getResponseHeaders().set("Accept-Ranges", "none");
+        exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
         exchange.sendResponseHeaders(200, 0);
         OutputStream body = exchange.getResponseBody();
         long written = 0;
@@ -214,6 +216,50 @@ public final class SecureMediaGateway implements AutoCloseable {
         if (part != null && written > 0) {
             cache.commit(part, resource.cacheKey());
         }
+    }
+
+    /** 逐跳校验重定向后打开上游流；range 非空时携带 Range 请求头（416 原样返回给调用方）。 */
+    private HttpResponse<InputStream> openUpstream(Resource resource, String range) throws Exception {
+        URI current = resource.url();
+        firewall.validate(current);
+        HttpResponse<InputStream> response = null;
+        int redirects = 0;
+        for (int hop = 0; hop <= firewall.policy().maxRedirects(); hop++) {
+            HttpRequest.Builder builder = HttpRequest.newBuilder(current)
+                    .timeout(Duration.ofMinutes(10))
+                    .GET();
+            if (range != null) {
+                builder.header("Range", range);
+            }
+            if (resource.headers() != null) {
+                resource.headers().forEach((name, value) -> {
+                    if (isAllowedHeader(name)) builder.header(name, value);
+                });
+            }
+            response = http.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+            int status = response.statusCode();
+            if (status >= 300 && status < 400) {
+                String location = response.headers().firstValue("Location").orElse(null);
+                response.body().close();
+                if (location == null) throw new MediaSecurityException("HTTP_3XX", "redirect without location");
+                redirects++;
+                if (redirects > firewall.policy().maxRedirects()) {
+                    throw new MediaSecurityException("FIREWALL_REJECTED", "too many redirects");
+                }
+                current = firewall.validateRedirect(current.resolve(location));
+                continue;
+            }
+            if (status == 416) {
+                return response;
+            }
+            if (status >= 400) {
+                response.body().close();
+                throw new MediaSecurityException("HTTP_" + status, "upstream status " + status);
+            }
+            break;
+        }
+        if (response == null) throw new IOException("no response");
+        return response;
     }
 
     /** Header 白名单（设计文档 §26）：禁止 Cookie / Authorization 等账号凭据。 */
