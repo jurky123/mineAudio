@@ -126,7 +126,14 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     @Override
     public void onTickReport() {
         for (Session session : sessions.values()) {
-            session.tick();
+            session.report();
+        }
+    }
+
+    /** 每个客户端 tick 调用：泵送流缓冲，避免 OpenAL 源 underrun 后不再出声。 */
+    public void tick() {
+        for (Session session : sessions.values()) {
+            session.pump();
         }
     }
 
@@ -207,12 +214,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             });
         }
 
-        void tick() {
+        void pump() {
+            if (closed || paused || finished || errorCode != null) return;
             ChannelAccess.ChannelHandle current = handle;
-            if (current != null) {
-                current.execute(Channel::updateStream);
-            }
-            report();
+            if (current == null) return;
+            current.execute(channel -> {
+                channel.updateStream();
+                if (!channel.playing()) {
+                    channel.play();
+                }
+            });
         }
 
         void setPaused(boolean value) {

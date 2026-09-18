@@ -46,8 +46,10 @@ public class MineAudioFabricClient implements ClientModInitializer {
             ProtocolClient.get().onDisconnect();
         });
 
-        ClientTickEvents.END_CLIENT_TICK.register(client ->
-                ProtocolClient.get().tick(System.nanoTime() / 1_000_000));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            AUDIO.tick();
+            ProtocolClient.get().tick(System.nanoTime() / 1_000_000);
+        });
 
         LOGGER.info("MineAudio Client {} 初始化完成（26.2，流媒体{}）",
                 version(), AUDIO.available() ? "可用" : "不可用");
