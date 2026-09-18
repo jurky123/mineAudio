@@ -43,7 +43,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 /** /mineaudio：点播、停止、区域管理、重载与调试。 */
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "emitter", "ui", "reload", "debug");
+    private static final List<String> SUBCOMMANDS = List.of("play", "stop", "pause", "resume", "seek", "volume",
+            "region", "emitter", "ui", "reload", "debug");
     private static final List<String> SCOPES = List.of("self", "player", "world", "global");
     private static final List<String> BUSES = List.of("MUSIC", "AMBIENT", "SFX", "UI");
     private static final List<String> REGION_ACTIONS = List.of("list", "pos1", "pos2", "create", "sphere",
@@ -74,6 +75,10 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         switch (sub) {
             case "play" -> play(sender, args);
             case "stop" -> stop(sender, args);
+            case "pause" -> pauseResume(sender, args, true);
+            case "resume" -> pauseResume(sender, args, false);
+            case "seek" -> seek(sender, args);
+            case "volume" -> volume(sender, args);
             case "region" -> region(sender, args);
             case "emitter" -> emitter(sender, args);
             case "ui" -> {
@@ -141,6 +146,91 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             orchestrator.stop(audience, bus);
         }
         sender.sendMessage(Component.text("已停止 " + (bus == null ? "全部" : bus) + " 播放", NamedTextColor.GREEN));
+    }
+
+    // ---------- 客户端控制 ----------
+
+    private void pauseResume(CommandSender sender, String[] args, boolean pause) {
+        Player target = targetPlayer(sender, args, 1);
+        if (target == null) return;
+        boolean ok = pause ? orchestrator.pauseMusic(target) : orchestrator.resumeMusic(target);
+        sender.sendMessage(Component.text((ok ? "已" : "无法") + (pause ? "暂停 " : "继续 ") + target.getName(),
+                ok ? NamedTextColor.GREEN : NamedTextColor.RED));
+    }
+
+    private void seek(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("用法：/mineaudio seek <毫秒|mm:ss> [玩家]", NamedTextColor.RED));
+            return;
+        }
+        long positionMs = parseTime(args[1]);
+        if (positionMs < 0) {
+            sender.sendMessage(Component.text("时间格式：毫秒或 mm:ss / hh:mm:ss", NamedTextColor.RED));
+            return;
+        }
+        Player target = targetPlayer(sender, args, 2);
+        if (target == null) return;
+        com.mineaudio.playback.PlaybackSession session = orchestrator.currentMusic(target);
+        boolean ok = session != null && session.handle().seek(java.time.Duration.ofMillis(positionMs));
+        sender.sendMessage(Component.text((ok ? "已定位到 " + positionMs + "ms → " : "当前没有可定位的音乐 → ")
+                + target.getName(), ok ? NamedTextColor.GREEN : NamedTextColor.RED));
+    }
+
+    private void volume(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("用法：/mineaudio volume <0-100> [玩家]", NamedTextColor.RED));
+            return;
+        }
+        int percent;
+        try {
+            percent = Integer.parseInt(args[1]);
+        } catch (NumberFormatException e) {
+            percent = -1;
+        }
+        if (percent < 0 || percent > 100) {
+            sender.sendMessage(Component.text("音量范围 0-100", NamedTextColor.RED));
+            return;
+        }
+        Player target = targetPlayer(sender, args, 2);
+        if (target == null) return;
+        com.mineaudio.playback.PlaybackSession session = orchestrator.currentMusic(target);
+        boolean ok = session != null && session.handle().setVolume(percent / 100f);
+        sender.sendMessage(Component.text((ok ? "音量已设为 " + percent + "% → " : "当前没有可调音量的音乐 → ")
+                + target.getName(), ok ? NamedTextColor.GREEN : NamedTextColor.RED));
+    }
+
+    private Player targetPlayer(CommandSender sender, String[] args, int index) {
+        if (args.length > index) {
+            Player named = org.bukkit.Bukkit.getPlayerExact(args[index]);
+            if (named == null) {
+                sender.sendMessage(Component.text("玩家不在线：" + args[index], NamedTextColor.RED));
+            }
+            return named;
+        }
+        if (sender instanceof Player player) return player;
+        sender.sendMessage(Component.text("控制台使用时请指定玩家", NamedTextColor.RED));
+        return null;
+    }
+
+    private static long parseTime(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            // 继续尝试 mm:ss
+        }
+        String[] parts = value.split(":");
+        try {
+            if (parts.length == 2) {
+                return (Long.parseLong(parts[0]) * 60 + Long.parseLong(parts[1])) * 1000;
+            }
+            if (parts.length == 3) {
+                return (Long.parseLong(parts[0]) * 3600 + Long.parseLong(parts[1]) * 60
+                        + Long.parseLong(parts[2])) * 1000;
+            }
+        } catch (NumberFormatException ignored) {
+            // 落到 -1
+        }
+        return -1;
     }
 
     // ---------- 区域 ----------
