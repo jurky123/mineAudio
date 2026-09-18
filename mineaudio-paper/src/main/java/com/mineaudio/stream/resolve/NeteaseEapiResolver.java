@@ -25,12 +25,17 @@ import com.google.gson.JsonParser;
 public final class NeteaseEapiResolver implements StreamResolver {
 
     static final String API_PATH = "/api/song/enhance/player/url/v1";
-    static final String ENDPOINT = "https://interface.music.163.com" + API_PATH;
+    static final String ENDPOINT = "https://music.163.com/eapi" + API_PATH;
     static final String SOURCE_ID = "netease";
 
     private static final Set<String> SOURCES = Set.of("netease", "ncmlite");
     private static final String USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+            "Mozilla/5.0 (Linux; Android 9; PCT-AL10) AppleWebKit/537.36 (KHTML, like Gecko)"
+                    + " Chrome/70.0.3538.64 HuaweiBrowser/10.0.3.311 Mobile Safari/537.36";
+    private static final String DEVICE_HEADER_JSON =
+            "\"header\":{\"os\":\"android\",\"appver\":\"8.10.10\",\"versioncode\":\"140\","
+                    + "\"mobilename\":\"PCT-AL10\",\"buildver\":\"1700000000\","
+                    + "\"resolution\":\"1920x1080\",\"channel\":\"xiaomi\",\"__csrf\":\"\"}";
     private static final Pattern SONG_ID = Pattern.compile("\\d{1,20}");
 
     private final Config config;
@@ -80,12 +85,13 @@ public final class NeteaseEapiResolver implements StreamResolver {
     private CompletionStage<ResolveResult> requestUrl(String key, String id, boolean retryOnAuth) {
         String cookie = cookieHeader();
         String json = "{\"ids\":\"[" + id + "]\",\"level\":\"" + config.level()
-                + "\",\"encodeType\":\"flac\",\"e_r\":true,\"header\":{\"os\":\"pc\",\"appver\":\"8.9.70\"}}";
+                + "\",\"encodeType\":\"flac\",\"e_r\":true," + DEVICE_HEADER_JSON + "}";
         HttpRequest request = HttpRequest.newBuilder(URI.create(ENDPOINT))
                 .timeout(Duration.ofMillis(Math.max(500, config.timeoutMs())))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("User-Agent", USER_AGENT)
-                .header("Referer", "https://music.163.com/")
+                .header("Referer", "https://music.163.com")
+                .header("X-Real-IP", "118.88.88.88")
                 .header("Cookie", cookie)
                 .POST(HttpRequest.BodyPublishers.ofString(EapiCrypto.body(API_PATH, json)))
                 .build();
@@ -131,13 +137,15 @@ public final class NeteaseEapiResolver implements StreamResolver {
             throw new ResolveException(ResolveFailureKind.RATE_LIMITED, "网易接口限流");
         }
         if (statusCode != 200) {
-            throw new ResolveException(ResolveFailureKind.REMOTE_UNAVAILABLE, "网易接口 HTTP " + statusCode);
+            throw new ResolveException(ResolveFailureKind.REMOTE_UNAVAILABLE,
+                    "网易接口 HTTP " + statusCode + "：" + snippet(body));
         }
         JsonObject root;
         try {
             root = JsonParser.parseString(body).getAsJsonObject();
         } catch (Exception e) {
-            throw new ResolveException(ResolveFailureKind.INVALID_RESPONSE, "网易返回非法 JSON");
+            throw new ResolveException(ResolveFailureKind.INVALID_RESPONSE,
+                    "网易返回非 JSON：" + snippet(body));
         }
         if (!root.has("data") || !root.get("data").isJsonArray()) {
             throw new ResolveException(ResolveFailureKind.INVALID_RESPONSE, "网易返回缺少 data");
@@ -164,9 +172,15 @@ public final class NeteaseEapiResolver implements StreamResolver {
         return new ResolveResult(URI.create(url), null, null, durationMs, expiresAt);
     }
 
+    private static String snippet(String body) {
+        if (body == null) return "(空响应)";
+        String trimmed = body.strip();
+        return trimmed.length() <= 120 ? trimmed : trimmed.substring(0, 120) + "…";
+    }
+
     private String cookieHeader() {
         String credential = credential();
-        String base = "os=pc; appver=8.9.70";
+        String base = "os=android; appver=8.10.10; deviceId=MineAudioClient";
         return credential == null || credential.isBlank() ? base : base + "; MUSIC_U=" + credential;
     }
 
