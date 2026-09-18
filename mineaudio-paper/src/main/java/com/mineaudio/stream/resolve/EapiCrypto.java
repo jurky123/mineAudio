@@ -50,4 +50,11 @@ public final class EapiCrypto {
     public static String body(String path, String json) {
         return "params=" + java.net.URLEncoder.encode(encrypt(path, json), StandardCharsets.UTF_8);
     }
+
+    /** eapi 响应解密（AES-128-ECB/PKCS5，同一密钥）。非法密文抛异常，由调用方归类。 */
+    public static String decrypt(byte[] encrypted) throws java.security.GeneralSecurityException {
+        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(KEY, "AES"));
+        return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+    }
 }

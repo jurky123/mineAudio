@@ -104,7 +104,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
             return CompletableFuture.failedFuture(new ResolveException(
                     ResolveFailureKind.TIMEOUT, "解析线程被中断"));
         }
-        http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+        http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                 .whenComplete((response, error) -> {
                     concurrency.release();
                     if (error != null) {
@@ -112,7 +112,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
                         return;
                     }
                     try {
-                        future.complete(parse(response.statusCode(), response.body()));
+                        future.complete(parse(response.statusCode(), decodeBody(response.body())));
                     } catch (ResolveException e) {
                         if (retryOnAuth && e.kind() == ResolveFailureKind.ACCOUNT_NOT_ENTITLED) {
                             cache.invalidate(key);
@@ -170,6 +170,15 @@ public final class NeteaseEapiResolver implements StreamResolver {
         Instant expiresAt = expiSeconds > 0 ? Instant.now().plusSeconds(expiSeconds) : null;
         long durationMs = item.has("time") ? item.get("time").getAsLong() : 0;
         return new ResolveResult(URI.create(url), null, null, durationMs, expiresAt);
+    }
+
+    /** eapi 响应默认 AES-ECB 加密；解密失败时按明文处理（部分错误响应是明文 JSON）。 */
+    static String decodeBody(byte[] body) {
+        try {
+            return EapiCrypto.decrypt(body);
+        } catch (Exception e) {
+            return new String(body, java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 
     private static String snippet(String body) {
