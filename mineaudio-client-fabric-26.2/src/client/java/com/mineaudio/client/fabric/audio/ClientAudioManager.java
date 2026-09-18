@@ -1,6 +1,7 @@
 package com.mineaudio.client.fabric.audio;
 
 import java.lang.reflect.Field;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -8,10 +9,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.mineaudio.client.ProtocolClient;
 import com.mineaudio.client.decode.AudioDecoder;
 import com.mineaudio.client.decode.PcmRingBuffer;
+import com.mineaudio.client.media.MediaCache;
+import com.mineaudio.client.media.MediaFirewall;
+import com.mineaudio.client.media.MediaSecurityException;
+import com.mineaudio.client.media.SecureMediaGateway;
 import com.mineaudio.protocol.Packets;
 import com.mojang.blaze3d.audio.Channel;
 import com.mojang.blaze3d.audio.Library;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
@@ -37,6 +43,40 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private ChannelAccess channelAccess;
     private volatile boolean available;
+    private MediaFirewall.Policy serverPolicy;
+    private MediaFirewall firewall;
+    private SecureMediaGateway gateway;
+    private boolean gatewayTried;
+
+    /** 媒体防火墙：本地默认策略与服务端策略取交集。 */
+    private synchronized MediaFirewall firewall() {
+        if (firewall == null) {
+            MediaFirewall.Policy local = MediaFirewall.Policy.defaults();
+            if (serverPolicy != null) {
+                local = local.intersect(serverPolicy);
+            }
+            firewall = new MediaFirewall(local);
+        }
+        return firewall;
+    }
+
+    /** 本机媒体网关（含缓存）；创建失败时返回 null，退回直连。 */
+    private synchronized SecureMediaGateway gateway() {
+        if (gatewayTried) return gateway;
+        gatewayTried = true;
+        try {
+            java.nio.file.Path dir = FabricLoader.getInstance().getGameDir().resolve("mineaudio-cache");
+            MediaCache cache = new MediaCache(dir, 2L * 1024 * 1024 * 1024, 256L * 1024 * 1024);
+            cache.init();
+            cache.cleanupParts();
+            gateway = new SecureMediaGateway(firewall(), cache);
+        } catch (Throwable t) {
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                    "[audio] 媒体网关初始化失败，直连播放：{}", t.toString());
+            gateway = null;
+        }
+        return gateway;
+    }
 
     /** 声音引擎通道是否可用（反射失败时禁用流媒体能力，退回服务端 fallback）。 */
     public boolean available() {
@@ -118,6 +158,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
     @Override
     public void onHelloAck(Packets.HelloAck ack) {
+        if (ack.firewall() != null) {
+            serverPolicy = new MediaFirewall.Policy(
+                    ack.firewall().httpsOnly(), ack.firewall().denyPrivateNetwork(),
+                    ack.firewall().maxRedirects(), List.of(), List.of());
+            firewall = null;
+        }
         com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                 "服务端已确认 MineAudio 客户端（server={} report={}ms）",
                 ack.serverVersion(), ack.reportIntervalMs());
@@ -130,10 +176,21 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
     }
 
-    /** 每个客户端 tick 调用：泵送流缓冲，避免 OpenAL 源 underrun 后不再出声。 */
+    /** 每个客户端 tick 调用：泵送流缓冲、实时音量，并在播放音乐时压掉原版背景音乐。 */
     public void tick() {
+        boolean suppressVanilla = false;
         for (Session session : sessions.values()) {
             session.pump();
+            if (session.isMusicActive()) {
+                suppressVanilla = true;
+            }
+        }
+        if (suppressVanilla) {
+            try {
+                Minecraft.getInstance().getMusicManager().stopPlaying();
+            } catch (Throwable ignored) {
+                // 音乐管理器不可用时忽略
+            }
         }
     }
 
@@ -163,6 +220,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
 
         private volatile ChannelAccess.ChannelHandle handle;
+        private volatile String localUrl;
         private volatile float volume;
         private volatile float lastAppliedVolume = -1f;
         private volatile boolean paused;
@@ -191,7 +249,43 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] PLAY session={} url={} startPos={}ms volume={} spatial={}",
                     id, url, startPositionMs, volume, spatial != null);
-            decoder.start(url, startPositionMs, this);
+            Thread thread = new Thread(this::prepare, "MineAudio-Prepare");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        /** 校验 URL 并注册到本机网关（含缓存），解码器只访问 127.0.0.1。 */
+        private void prepare() {
+            String playUrl = url;
+            try {
+                URI uri = URI.create(url);
+                firewall().validate(uri);
+                SecureMediaGateway gw = gateway();
+                if (gw != null) {
+                    String local = gw.register(new SecureMediaGateway.Resource(
+                            id + "@" + revision, uri, Map.of(), 0));
+                    if (closed) {
+                        gw.unregister(local);
+                        return;
+                    }
+                    localUrl = local;
+                    playUrl = local;
+                } else {
+                    com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                            "[audio] 媒体网关不可用，直连播放 session={}", id);
+                }
+            } catch (MediaSecurityException e) {
+                Minecraft.getInstance().execute(() -> fail(e.code(), e.getMessage()));
+                return;
+            } catch (Throwable t) {
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                        "[audio] 媒体网关准备失败，直连播放 session={}：{}", id, t.toString());
+            }
+            decoder.start(playUrl, startPositionMs, this);
+        }
+
+        boolean isMusicActive() {
+            return !closed && !finished && errorCode == null && "MUSIC".equalsIgnoreCase(bus);
         }
 
         /** 到服务端起播时刻（校时对齐）且首批 PCM 就绪后创建通道，避免提前排静音导致 underrun。 */
@@ -328,6 +422,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             closed = true;
             decoder.close();
             stream.markEnded();
+            String local = localUrl;
+            localUrl = null;
+            SecureMediaGateway gw = gateway;
+            if (local != null && gw != null) {
+                gw.unregister(local);
+            }
             ChannelAccess.ChannelHandle current = handle;
             handle = null;
             if (current != null) {

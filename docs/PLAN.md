@@ -9,8 +9,10 @@
 > Phase 0 服务端重构、Phase 1 协议/握手/状态缓存、Phase 2a 安全媒体基础、Phase 2b 本机媒体网关、
 > Phase 2c 音频链路（LavaPlayer 48kHz 解码 + MC 声音引擎通道播放 + 会话控制/状态上报）已完成并推送，
 > 2026-09-19 实机验证出声成功（teststream 直链）。
-> 待办：本机媒体网关与 MediaFirewall 接入播放路径（Phase 5/6）、同步起播（Phase 4）、
-> MoeMusic source+id 的 Resolver（Phase 8）、MineUNO/MineChess 接入。
+> 后续已完成：Phase 4 校时同步起播/定时控制、音量跟随游戏设置（总音量+Bus 档位）、
+> Phase 5/6 播放路径接入 MediaFirewall + 本机网关 + MediaCache、播放音乐时压制原版背景音乐。
+> 待办：MoeMusic source+id 的 Resolver（Phase 8）、MineUI 联动与 `/mineaudio` 客户端控制收尾、
+> MineUNO/MineChess 接入。
 
 ## 1. V1 范围
 
