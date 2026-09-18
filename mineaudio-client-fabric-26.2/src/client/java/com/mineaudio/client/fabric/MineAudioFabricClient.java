@@ -1,6 +1,7 @@
 package com.mineaudio.client.fabric;
 
 import com.mineaudio.client.ProtocolClient;
+import com.mineaudio.client.fabric.audio.ClientAudioManager;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -18,6 +19,8 @@ public class MineAudioFabricClient implements ClientModInitializer {
     public static final String MINECRAFT_VERSION = "26.2";
     public static final Logger LOGGER = LoggerFactory.getLogger("MineAudio");
 
+    private static final ClientAudioManager AUDIO = new ClientAudioManager();
+
     @Override
     public void onInitializeClient() {
         PayloadTypeRegistry.serverboundPlay().register(MineAudioPayload.TYPE, MineAudioPayload.CODEC);
@@ -26,17 +29,27 @@ public class MineAudioFabricClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(MineAudioPayload.TYPE, (payload, context) ->
                 context.client().execute(() -> ProtocolClient.get().handle(payload.data())));
 
+        ProtocolClient.get().setListener(AUDIO);
+        if (AUDIO.available()) {
+            ProtocolClient.get().setCapabilities(ClientAudioManager.CAPABILITIES);
+            ProtocolClient.get().setFormats(ClientAudioManager.FORMATS);
+        }
+
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 ProtocolClient.get().onJoin(
                         bytes -> ClientPlayNetworking.send(new MineAudioPayload(bytes)),
                         version(), MINECRAFT_VERSION, locale()));
 
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ProtocolClient.get().onDisconnect());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            AUDIO.closeAll();
+            ProtocolClient.get().onDisconnect();
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client ->
                 ProtocolClient.get().tick(System.nanoTime() / 1_000_000));
 
-        LOGGER.info("MineAudio Client {} 初始化完成（26.2）", version());
+        LOGGER.info("MineAudio Client {} 初始化完成（26.2，流媒体{}）",
+                version(), AUDIO.available() ? "可用" : "不可用");
     }
 
     public static String version() {

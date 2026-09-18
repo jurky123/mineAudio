@@ -22,27 +22,27 @@ public final class ProtocolClient {
         void send(byte[] data);
     }
 
-    /** 服务端指令与心跳回调；全部为默认空实现，平台层按需覆盖。 */
+    /** 服务端指令与心跳回调；全部为默认空实现，平台层按需覆盖。session 为服务端会话号。 */
     public interface Listener {
         default void onHelloAck(Packets.HelloAck ack) {
         }
 
-        default void onPlay(Packets.Play play) {
+        default void onPlay(String session, Packets.Play play) {
         }
 
-        default void onStop(Packets.Stop stop) {
+        default void onStop(String session, Packets.Stop stop) {
         }
 
-        default void onPause(Packets.Pause pause) {
+        default void onPause(String session, Packets.Pause pause) {
         }
 
-        default void onResume(Packets.Resume resume) {
+        default void onResume(String session, Packets.Resume resume) {
         }
 
-        default void onSeek(Packets.Seek seek) {
+        default void onSeek(String session, Packets.Seek seek) {
         }
 
-        default void onVolume(Packets.Volume volume) {
+        default void onVolume(String session, Packets.Volume volume) {
         }
 
         /** 按服务端配置的间隔触发（默认 1s），用于上报各会话状态。 */
@@ -166,12 +166,12 @@ public final class ProtocolClient {
         switch (envelope.type()) {
             case HELLO_ACK -> handleHelloAck(envelope);
             case PONG -> handlePong(envelope);
-            case PLAY -> dispatch(envelope, Packets.Play.class, listener::onPlay);
-            case STOP -> dispatch(envelope, Packets.Stop.class, listener::onStop);
-            case PAUSE -> dispatch(envelope, Packets.Pause.class, listener::onPause);
-            case RESUME -> dispatch(envelope, Packets.Resume.class, listener::onResume);
-            case SEEK -> dispatch(envelope, Packets.Seek.class, listener::onSeek);
-            case VOLUME -> dispatch(envelope, Packets.Volume.class, listener::onVolume);
+            case PLAY -> dispatchSession(envelope, Packets.Play.class, listener::onPlay);
+            case STOP -> dispatchSession(envelope, Packets.Stop.class, listener::onStop);
+            case PAUSE -> dispatchSession(envelope, Packets.Pause.class, listener::onPause);
+            case RESUME -> dispatchSession(envelope, Packets.Resume.class, listener::onResume);
+            case SEEK -> dispatchSession(envelope, Packets.Seek.class, listener::onSeek);
+            case VOLUME -> dispatchSession(envelope, Packets.Volume.class, listener::onVolume);
             default -> {
                 // 未知/暂不处理的包：忽略
             }
@@ -205,6 +205,15 @@ public final class ProtocolClient {
     private <T> void dispatch(Envelope envelope, Class<T> type, Consumer<T> consumer) {
         try {
             consumer.accept(ProtocolCodec.data(envelope, type));
+        } catch (ProtocolException ignored) {
+            // 忽略坏包
+        }
+    }
+
+    private <T> void dispatchSession(Envelope envelope, Class<T> type,
+            java.util.function.BiConsumer<String, T> consumer) {
+        try {
+            consumer.accept(envelope.session(), ProtocolCodec.data(envelope, type));
         } catch (ProtocolException ignored) {
             // 忽略坏包
         }
