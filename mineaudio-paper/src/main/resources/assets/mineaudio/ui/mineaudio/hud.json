@@ -60,7 +60,7 @@
     },
     {
       "type": "row",
-      "justify": "space_between",
+      "justify": "space-between",
       "children": [
         {
           "type": "text",
