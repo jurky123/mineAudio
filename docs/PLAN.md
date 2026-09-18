@@ -313,6 +313,8 @@ emitters:
   M → 设置或 `[client.now_playing_hud]` 中调小/移位/关闭（安装说明已写明）
 - Phase 5（定制流媒体客户端 mod）需求已单独整理：[CLIENT_MOD_REQUIREMENTS.md](CLIENT_MOD_REQUIREMENTS.md)，
   用于突破 MoeMusic 的状态/控制/HUD 封闭限制；设计文档由后续确定
+- UI 能力（HUD / 远程图片 / 进度条 / 键位 / 高亮列表等）拆为 MineUI 通用需求：
+  [MINEUI_REQUIREMENTS.md](MINEUI_REQUIREMENTS.md)，MineAudio 只负责下发状态与动作
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 

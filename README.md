@@ -13,6 +13,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 - 设计文档：[初步设计文档](初步设计文档)
 - 落地方案与实施记录：[docs/PLAN.md](docs/PLAN.md)
 - 配套流媒体客户端 Mod 需求：[docs/CLIENT_MOD_REQUIREMENTS.md](docs/CLIENT_MOD_REQUIREMENTS.md)
+- MineUI 新增能力需求（音乐 UI 驱动）：[docs/MINEUI_REQUIREMENTS.md](docs/MINEUI_REQUIREMENTS.md)
 
 ## 特性（V1）
 
