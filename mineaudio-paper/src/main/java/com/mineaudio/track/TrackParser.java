@@ -85,15 +85,24 @@ public final class TrackParser {
         }
     }
 
-    private static Key parseId(String id, Consumer<String> warn) {
+    /** 把字符串转成完整 Key：无命名空间时补 mineaudio。命令与业务侧共用。 */
+    public static Optional<Key> keyOf(String id) {
         String value = id.trim().toLowerCase(Locale.ROOT);
         if (!value.contains(":")) value = "mineaudio:" + value;
         try {
-            return Key.key(value);
+            return Optional.of(Key.key(value));
         } catch (RuntimeException e) {
+            return Optional.empty();
+        }
+    }
+
+    private static Key parseId(String id, Consumer<String> warn) {
+        Optional<Key> key = keyOf(id);
+        if (key.isEmpty()) {
             warn.accept("非法曲目 ID：" + id);
             return null;
         }
+        return key.get();
     }
 
     private static Key parseSound(String raw, String where, Consumer<String> warn) {

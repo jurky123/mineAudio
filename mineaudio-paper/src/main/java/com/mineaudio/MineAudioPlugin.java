@@ -2,26 +2,42 @@ package com.mineaudio;
 
 import java.io.File;
 
+import com.mineaudio.backend.BackendRegistry;
+import com.mineaudio.backend.SoundBackend;
 import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
 import com.mineaudio.config.YamlNode;
+import com.mineaudio.listener.PlayerConnectionListener;
+import com.mineaudio.playback.AudioOrchestrator;
+import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
+import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import com.mineaudio.api.MineAudioProvider;
 
 /** MineAudio 主插件：统一管理“什么时候、给谁、在哪里、播放什么”。 */
 public final class MineAudioPlugin extends JavaPlugin {
 
     private final TrackRegistry trackRegistry = new TrackRegistry();
     private final CueRegistry cueRegistry = new CueRegistry();
+    private final BackendRegistry backends = new BackendRegistry();
+    private AudioOrchestrator orchestrator;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         reloadAudio();
 
-        AudioCommand command = new AudioCommand(this);
+        backends.register(new SoundBackend(this));
+        PlayerPackStatus packStatus = new PlayerPackStatus(this);
+        orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends, packStatus);
+        MineAudioProvider.register(orchestrator);
+        Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
+
+        AudioCommand command = new AudioCommand(this, orchestrator);
         PluginCommand audio = getCommand("audio");
         if (audio != null) {
             audio.setExecutor(command);
@@ -29,11 +45,15 @@ public final class MineAudioPlugin extends JavaPlugin {
         }
 
         getLogger().info("MineAudio 已启用（" + trackRegistry.size() + " 首曲目，"
-                + cueRegistry.size() + " 个音效）");
+                + cueRegistry.size() + " 个音效，" + backends.all().size() + " 个 Backend）");
     }
 
     @Override
     public void onDisable() {
+        MineAudioProvider.unregister();
+        if (orchestrator != null) {
+            orchestrator.shutdown();
+        }
         getLogger().info("MineAudio 已停用");
     }
 
@@ -78,6 +98,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public CueRegistry cueRegistry() {
         return cueRegistry;
+    }
+
+    public AudioOrchestrator orchestrator() {
+        return orchestrator;
     }
 
     public boolean debug() {
