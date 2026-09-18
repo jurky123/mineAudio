@@ -105,6 +105,37 @@
                       "scale": 0.8
                     }
                   ]
+                },
+                {
+                  "type": "column",
+                  "width": "100%",
+                  "gap": 2,
+                  "visible": "{state.progress_visible}",
+                  "children": [
+                    {
+                      "type": "progress",
+                      "width": "100%",
+                      "height": 8,
+                      "radius": 4,
+                      "background": "#40000000",
+                      "fillGradient": [
+                        "#00C8B4",
+                        "#8A5FD0"
+                      ],
+                      "value": "{state.percent}",
+                      "min": 0,
+                      "max": 100,
+                      "playing": "{state.playing}",
+                      "interpolate": true,
+                      "snap": 5
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.time}",
+                      "color": "#909090",
+                      "scale": 0.75
+                    }
+                  ]
                 }
               ]
             }
@@ -164,10 +195,78 @@
           ]
         },
         {
+          "type": "row",
+          "gap": 6,
+          "justify": "center",
+          "children": [
+            {
+              "type": "button",
+              "skin": "vanilla:button",
+              "text": "-15s",
+              "action": "seek_back",
+              "width": 46,
+              "height": 16,
+              "hoverScale": 1.08,
+              "tooltip": "后退 15 秒（仅流媒体客户端支持）"
+            },
+            {
+              "type": "button",
+              "skin": "vanilla:button",
+              "text": "+15s",
+              "action": "seek_fwd",
+              "width": 46,
+              "height": 16,
+              "hoverScale": 1.08,
+              "tooltip": "前进 15 秒（仅流媒体客户端支持）"
+            },
+            {
+              "type": "button",
+              "skin": "vanilla:button",
+              "text": "音量 -",
+              "action": "vol_down",
+              "width": 56,
+              "height": 16,
+              "hoverScale": 1.08
+            },
+            {
+              "type": "button",
+              "skin": "vanilla:button",
+              "text": "音量 +",
+              "action": "vol_up",
+              "width": 56,
+              "height": 16,
+              "hoverScale": 1.08
+            },
+            {
+              "type": "text",
+              "text": "{state.volume}",
+              "color": "#C0C0C0",
+              "scale": 0.8
+            },
+            {
+              "type": "button",
+              "skin": "vanilla:button",
+              "text": "HUD",
+              "action": "toggle_hud",
+              "width": 44,
+              "height": 16,
+              "hoverScale": 1.08,
+              "tooltip": "开启/关闭“正在播放”HUD"
+            }
+          ]
+        },
+        {
           "type": "text",
           "text": "{state.note}",
           "color": "#FFD54F",
           "scale": 0.85
+        },
+        {
+          "type": "text",
+          "text": "{state.status}",
+          "color": "#FF8A65",
+          "scale": 0.8,
+          "visible": "{state.status_visible}"
         },
         {
           "type": "column",
@@ -525,7 +624,7 @@
         },
         {
           "type": "text",
-          "text": "搜索 / 队列 / 歌词请按 M 打开 MoeMusic 播放器",
+          "text": "按 {key.open_ui} 打开音乐界面 · {key.toggle_hud} 切换 HUD；搜索 / 队列 / 歌词请按 M 打开 MoeMusic 播放器",
           "color": "#808080",
           "scale": 0.8
         },

@@ -8,13 +8,14 @@ import org.bukkit.entity.Player;
 import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackState;
+import com.mineaudio.playback.StatusAware;
 import com.mineaudio.protocol.Envelope;
 import com.mineaudio.protocol.PacketType;
 import com.mineaudio.protocol.Packets;
 import com.mineaudio.protocol.ProtocolCodec;
 
 /** 单个玩家的客户端流会话句柄：指令下发 + 状态读服务端缓存。 */
-final class ClientStreamHandle implements PlaybackHandle {
+final class ClientStreamHandle implements PlaybackHandle, StatusAware {
 
     private final MineAudioPlugin plugin;
     private final ClientProtocolService protocol;
@@ -83,6 +84,20 @@ final class ClientStreamHandle implements PlaybackHandle {
         if (!player.isOnline()) return false;
         send(PacketType.VOLUME, new Packets.Volume(Math.max(0f, Math.min(1f, volume)), 300));
         return true;
+    }
+
+    @Override
+    public String statusNote() {
+        ClientPlaybackStateCache.Snapshot snapshot = protocol.stateCache().snapshot(player, sessionId.toString());
+        if (snapshot == null) return null;
+        if (snapshot.errorCode() != null) {
+            return "播放错误（" + snapshot.errorCode() + "）：" + snapshot.errorMessage();
+        }
+        return switch (snapshot.state()) {
+            case "BUFFERING" -> "缓冲中…";
+            case "PENDING" -> "等待客户端起播…";
+            default -> null;
+        };
     }
 
     private long currentPositionMs() {

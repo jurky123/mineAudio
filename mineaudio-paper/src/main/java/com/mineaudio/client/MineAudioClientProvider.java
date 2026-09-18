@@ -137,7 +137,7 @@ public final class MineAudioClientProvider implements StreamProvider {
         protocol.send(player, Envelope.session(PacketType.ERROR, request.sessionId().toString(),
                 request.timing().revision(),
                 ProtocolCodec.data(new Packets.ErrorReport(kind, message))));
-        handle.fail();
+        handle.fail(kind, message);
     }
 
     private static ResolveException resolveException(Throwable error) {

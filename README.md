@@ -24,7 +24,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
 - 发声点：世界坐标 + 半径，`ALWAYS` / `REDSTONE` / `COMMAND` / `INTERACT` 触发
 - Fallback：资源包未加载或 NoteBlockAPI 未安装时自动降级；缺失只影响对应 Backend
-- MineUI 音乐界面：`/mineaudio ui` 查看当前播放、控制暂停/停止、点播曲目与停止环境音
+- MineUI 音乐界面：`/mineaudio ui` 查看当前播放（含进度条）、控制暂停/继续/定位/音量、点播曲目，`/mineaudio hud` 切换“正在播放”HUD
 - 每玩家能力查询（`AudioCapabilities`）与事件（播放 / 停止 / 进出区域 / Emitter 启动）
 - Java API `com.mineaudio.api`：`play` / `playSfx` / `playSfxAt` / `stop` / `registerCue`
 
@@ -197,8 +197,10 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 │  │ 💿  稻香                            │ │
 │  │     周杰伦                          │ │
 │  │     ● PLAYING  stream  API          │ │
+│  │     ███████████░░░░░░░░  1:23/3:45  │ │
 │  └────────────────────────────────────┘ │
 │  [暂停] [继续] [停止音乐] [停止环境音]   │
+│  [-15s] [+15s] [音量-] [音量+] 100% [HUD]│
 │  曲目（自己 / 全服）                     │
 │  稻香      MUSIC  STREAM   [自己][全服] │
 │  demo      MUSIC  PACK     [自己][全服] │
@@ -209,11 +211,15 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 ```
 
 - 打开时下发完整状态，之后每秒与每次操作后增量推送（服务端权威状态）
+- 进度条数据来自客户端的 STATE 上报，客户端本地插值，服务端 1Hz 推送即可保持平滑
+- 解析状态与失败分类（`UNSUPPORTED_SOURCE / CREDENTIAL_MISSING / …`）直接在页面上显示，失败时同时 Toast
+- 页面按钮：暂停/继续/停止/±15s 定位/音量 ±10%/HUD 开关；键位：`F7`(槽位1) 打开界面、`F8`(槽位2) 切换 HUD（可在原版按键设置改键）
+- `/mineaudio hud` 切换“正在播放”HUD（右上角，MineUI 0.8+ 客户端；节点定义 `hud.json`，进度条同样插值）
 - 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
 - MoeMusic 自带的客户端界面（搜索 / 队列 / 歌词，按 `M` 打开）是 mod 内置界面，
   无法并入 MineUI 页面；MineAudio 界面只做服务端可控的状态与控制
-- 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`
-- 后续（Phase 3 剩余）：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
+- 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`（HUD 为 `hud.json`）
+- 后续（Phase 3 剩余）：搜索、队列、歌词（依赖 MoeMusic 对外能力开放）
 
 ### MoeMusic 客户端 HUD（左上角旋转唱片卡片）
 
@@ -281,6 +287,7 @@ lines:
 
 /mineaudio reload
 /mineaudio ui                                       # MineUI 音乐界面（需客户端装 MineUI mod）
+/mineaudio hud                                      # 切换“正在播放”HUD（MineUI 0.8+ 客户端）
 /mineaudio debug                                    # 曲目/音效/区域/发声点 + 在线玩家会话
 ```
 
@@ -356,8 +363,9 @@ Cuboid/Sphere 区域与优先级、红石 Emitter、Cue 与 Fallback、Java API�
 Phase 2 已完成（MoeMusic 部分）：`STREAM` 曲目、MoeMusic 命令桥、全服同步播放、
 按玩家客户端能力 fallback、`moemusic:client_handshake` 能力探测。
 
-Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 / 暂停继续停止 / 曲目点播 / 环境音），
-客户端安装包由 `tools/build_client_kit.sh` 生成。
+Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 + 进度条 / 暂停继续停止 / ±15s 定位 /
+音量调整 / 曲目点播 / 环境音 / 解析状态与失败分类）、“正在播放”HUD（`/mineaudio hud`）、
+键位（槽位1 打开界面、槽位2 切换 HUD）与错误 Toast；客户端安装包由 `tools/build_client_kit.sh` 生成。
 
 后续阶段见 [docs/PLAN.md](docs/PLAN.md)：
 

@@ -10,9 +10,10 @@
 > Phase 2c 音频链路（LavaPlayer 48kHz 解码 + MC 声音引擎通道播放 + 会话控制/状态上报）已完成并推送，
 > 2026-09-19 实机验证出声成功（teststream 直链）。
 > 后续已完成：Phase 4 校时同步起播/定时控制、音量跟随游戏设置（总音量+Bus 档位）、
-> Phase 5/6 播放路径接入 MediaFirewall + 本机网关 + MediaCache、播放音乐时压制原版背景音乐。
-> 待办：MoeMusic source+id 的 Resolver（Phase 8）、MineUI 联动与 `/mineaudio` 客户端控制收尾、
-> MineUNO/MineChess 接入。
+> Phase 5/6 播放路径接入 MediaFirewall + 本机网关 + MediaCache、播放音乐时压制原版背景音乐、
+> `/mineaudio` 客户端控制（pause/resume/seek/volume）、MineUI 音乐界面收尾（进度条 / 定位 / 音量 /
+> 解析状态与失败分类 / 错误 Toast / 键位 / “正在播放”HUD）、断线释放通道崩溃修复（客户端 0.1.10）。
+> 待办：MoeMusic 歌词/搜索/队列接入、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +
 > 解析失败自动回退 MoeMusic Legacy；凭证（MUSIC_U）仅从环境变量 `MINEAUDIO_NETEASE_MUSIC_U` 读取，
@@ -310,9 +311,11 @@ emitters:
 - 通过 `MineUiHook` 反射加载 `integration/MineUiIntegration`，未装 MineUI 或 API 不匹配时退化为
   Noop + 聊天提示（与 MineChess / MineSkin 的集成模式一致，`compileOnly` MineUI API）
 - 服务端权威状态：打开时 `snapshot()`，之后每秒（刷新任务）与每次操作后推送增量
-- 已实现：当前播放（标题/作者/状态/Backend/来源）、暂停/继续/停止、停止环境音、曲目列表
-  自己/全服点播、流媒体客户端能力提示
-- 未实现（依赖 MoeMusic 对外能力）：搜索、队列、音量实时调节、歌词、进度条
+- 已实现：当前播放（标题/作者/状态/Backend/来源）、暂停/继续/停止、±15s 定位、音量 ±10%、
+  HUD 开关、停止环境音、曲目列表自己/全服点播、流媒体客户端能力提示、进度条（客户端插值）、
+  解析状态与失败分类（`StatusAware`）、错误 Toast、键位（槽位1 打开界面 / 槽位2 切换 HUD）
+- “正在播放”HUD：`assets/mineaudio/ui/mineaudio/hud.json`，`/mineaudio hud` 切换（MineUI 0.8+）
+- 未实现（依赖 MoeMusic 对外能力）：搜索、队列、歌词
 - 客户端安装包：`tools/build_client_kit.sh` 从 Modrinth 解析 Fabric 26.2 版本，
   打包 MineUI 客户端 + MoeMusic + Bad Packets + Fabric Language Kotlin + Fabric API +
   Cloth Config/Mod Menu（可选）+ Fabric 安装器与中文安装说明

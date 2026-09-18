@@ -1,0 +1,87 @@
+{
+  "type": "column",
+  "skin": "mineui:glass",
+  "width": 230,
+  "gap": 4,
+  "padding": 8,
+  "visible": "{state.active}",
+  "children": [
+    {
+      "type": "row",
+      "gap": 6,
+      "align": "center",
+      "children": [
+        {
+          "type": "item",
+          "item": "minecraft:music_disc_cat",
+          "scale": 1.2,
+          "cycle": {
+            "interval": 1.0,
+            "items": [
+              "minecraft:music_disc_cat",
+              "minecraft:music_disc_13"
+            ]
+          }
+        },
+        {
+          "type": "column",
+          "gap": 1,
+          "width": "80%",
+          "children": [
+            {
+              "type": "text",
+              "text": "{state.title}",
+              "color": "#FFFFFF",
+              "scale": 0.95
+            },
+            {
+              "type": "text",
+              "text": "{state.subtitle}",
+              "color": "#A0A0A0",
+              "scale": 0.75
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "progress",
+      "width": "100%",
+      "height": 6,
+      "radius": 3,
+      "background": "#40000000",
+      "color": "#00C8B4",
+      "value": "{state.percent}",
+      "min": 0,
+      "max": 100,
+      "playing": "{state.playing}",
+      "interpolate": true,
+      "snap": 5
+    },
+    {
+      "type": "row",
+      "justify": "space_between",
+      "children": [
+        {
+          "type": "text",
+          "text": "{state.time}",
+          "color": "#909090",
+          "scale": 0.7
+        },
+        {
+          "type": "text",
+          "text": "{state.status}",
+          "color": "#FFD54F",
+          "scale": 0.7,
+          "visible": "{state.status_visible}"
+        },
+        {
+          "type": "text",
+          "text": "{state.state}",
+          "color": "#7A7A7A",
+          "scale": 0.7
+        }
+      ]
+    }
+  ]
+}

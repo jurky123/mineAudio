@@ -44,7 +44,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBCOMMANDS = List.of("play", "stop", "pause", "resume", "seek", "volume",
-            "region", "emitter", "ui", "reload", "debug");
+            "region", "emitter", "ui", "hud", "reload", "debug");
     private static final List<String> SCOPES = List.of("self", "player", "world", "global");
     private static final List<String> BUSES = List.of("MUSIC", "AMBIENT", "SFX", "UI");
     private static final List<String> REGION_ACTIONS = List.of("list", "pos1", "pos2", "create", "sphere",
@@ -88,6 +88,20 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                     } else {
                         sender.sendMessage(Component.text("需要 MineUI 客户端（0.7.0+）才能打开音乐界面",
                                 NamedTextColor.YELLOW));
+                    }
+                } else {
+                    sender.sendMessage(Component.text("该命令只能在游戏内使用", NamedTextColor.RED));
+                }
+            }
+            case "hud" -> {
+                if (sender instanceof Player player) {
+                    if (!plugin.audioUi().hudSupported(player)) {
+                        sender.sendMessage(Component.text("需要 MineUI 0.11+ 客户端才能显示 HUD",
+                                NamedTextColor.YELLOW));
+                    } else if (plugin.audioUi().toggleHud(player)) {
+                        sender.sendMessage(Component.text("已开启“正在播放”HUD", NamedTextColor.GREEN));
+                    } else {
+                        sender.sendMessage(Component.text("已关闭“正在播放”HUD", NamedTextColor.GREEN));
                     }
                 } else {
                     sender.sendMessage(Component.text("该命令只能在游戏内使用", NamedTextColor.RED));
@@ -748,6 +762,15 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         }
         if (sub.equals("emitter")) {
             return emitterComplete(args);
+        }
+        if (sub.equals("pause") || sub.equals("resume")) {
+            return args.length == 2 ? match(onlineNames(), args[1]) : List.of();
+        }
+        if (sub.equals("seek") || sub.equals("volume")) {
+            if (args.length == 2) {
+                return sub.equals("seek") ? List.of("30", "1:00", "2:00") : List.of("0", "50", "100");
+            }
+            return args.length == 3 ? match(onlineNames(), args[2]) : List.of();
         }
         return List.of();
     }
