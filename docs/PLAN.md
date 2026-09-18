@@ -311,6 +311,8 @@ emitters:
   best-effort 补充（`MoeMusicNowPlaying`），MineAudio 未发起的播放也能显示；格式变化时退化为“未在播放”
 - MoeMusic 的左上角旋转唱片 HUD 是客户端本地渲染，服务端无法移动/缩放；玩家可在
   M → 设置或 `[client.now_playing_hud]` 中调小/移位/关闭（安装说明已写明）
+- Phase 5（定制流媒体客户端 mod）需求已单独整理：[CLIENT_MOD_REQUIREMENTS.md](CLIENT_MOD_REQUIREMENTS.md)，
+  用于突破 MoeMusic 的状态/控制/HUD 封闭限制；设计文档由后续确定
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 
