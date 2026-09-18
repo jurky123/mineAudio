@@ -36,6 +36,30 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 
+    // LavaPlayer 及依赖：jar-in-jar 内嵌（Apache-2.0；不随 Minecraft 提供）
+    def embedded = [
+            'dev.arbjerg:lavaplayer:2.2.3',
+            'dev.arbjerg:lava-common:2.2.3',
+            'dev.arbjerg:lavaplayer-natives:2.2.3',
+            'org.apache.httpcomponents:httpclient:4.5.14',
+            'org.apache.httpcomponents:httpcore:4.4.16',
+            'commons-logging:commons-logging:1.2',
+            'commons-codec:commons-codec:1.11',
+            'com.fasterxml.jackson.core:jackson-core:2.15.2',
+            'com.fasterxml.jackson.core:jackson-databind:2.15.2',
+            'com.fasterxml.jackson.core:jackson-annotations:2.15.2',
+            'org.mozilla:rhino-engine:1.7.14',
+            'org.mozilla:rhino:1.7.14',
+            'commons-io:commons-io:2.13.0',
+            'org.jsoup:jsoup:1.16.1',
+            'net.iharder:base64:2.3.9',
+            'org.json:json:20240303'
+    ]
+    embedded.each { dep ->
+        implementation dep
+        include dep
+    }
+
     // 纯 Java 模块：编译期依赖，构建时内嵌进 mod jar
     compileOnly project(':mineaudio-client-core')
     compileOnly project(':mineaudio-protocol')
