@@ -3,7 +3,7 @@
 > 依据：[初步设计文档](../初步设计文档) §69 / §77。
 > 核心原则：MineAudio 负责 **WHEN / WHO / WHERE / WHAT**，Backend 负责 **HOW**。
 >
-> 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成；Phase 2（MoeMusic 流媒体命令桥）已实现并部署；
+> 实现状态（2026-09-19）：M0–M6 已完成并推送；M7 文档完成；Phase 2（流媒体命令桥）已实现并部署，
 > Phase 3 界面部分（MineUI 音乐界面）已实现，客户端安装包见 tools/build_client_kit.sh。
 > MineAudio Client（自研流媒体客户端，26.2）按 docs/DESIGN_MINEAUDIO_MOD.md 推进：
 > Phase 0 服务端重构、Phase 1 协议/握手/状态缓存、Phase 2a 安全媒体基础、Phase 2b 本机媒体网关、
@@ -13,10 +13,12 @@
 > Phase 5/6 播放路径接入 MediaFirewall + 本机网关 + MediaCache、播放音乐时压制原版背景音乐、
 > `/mineaudio` 客户端控制（pause/resume/seek/volume）、MineUI 音乐界面收尾（进度条 / 定位 / 音量 /
 > 解析状态与失败分类 / 错误 Toast / 键位 / “正在播放”HUD）、断线释放通道崩溃修复（客户端 0.1.10）。
-> 待办：MoeMusic 歌词/搜索/队列接入、MineUNO/MineChess 接入、正式版客户端包。
+> MoeMusic 兼容路径（命令桥 / Legacy 降级 / `/music queue` 展示解析）已于 2026-09-19 全部移除，
+> 流媒体只走自研客户端；UI 由 MineUI 页面 + HUD 承载，解析失败按分类展示（不再依赖第三方插件）。
+> 待办：搜索/队列/歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +
-> 解析失败自动回退 MoeMusic Legacy；凭证（MUSIC_U）仅从环境变量 `MINEAUDIO_NETEASE_MUSIC_U` 读取，
+> 解析失败上报分类错误；凭证（MUSIC_U）仅从环境变量 `MINEAUDIO_NETEASE_MUSIC_U` 读取，
 > 不落配置、不进日志、不下发客户端。无凭证时匿名尝试，失败即降级。
 
 ## 1. V1 范围
@@ -288,7 +290,10 @@ emitters:
 - Emitter 触发 V1 支持 `ALWAYS / REDSTONE / COMMAND / INTERACT`；`PROXIMITY` 解析时降级为 `ALWAYS` 并告警，留待 Phase 4
 - World BGM 采用 `regions.yml` 的 `worlds:` 段（已确认）
 
-## 9.5 Phase 2 实现说明（MoeMusic 流媒体）
+## 9.5 Phase 2 实现说明（流媒体；MoeMusic 兼容路径已移除）
+
+> 2026-09-19 更新：本节所述 MoeMusic 命令桥 / Legacy 降级 / NowPlaying 解析已全部删除，
+> 仅保留历史记录；现行实现见 §9.7 与 docs/DESIGN_MINEAUDIO_MOD.md。
 
 调研结论（2026-09-18）：MoeMusic 的公开 Plugin API（`org.lolicode.moemusic:api`，maven.lolicode.org）
 面向**在 MoeMusic 内部运行的音源/扩展插件**，不提供外部 Paper 插件控制播放的 API；

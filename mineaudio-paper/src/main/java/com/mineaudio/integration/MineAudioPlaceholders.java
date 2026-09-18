@@ -9,7 +9,6 @@ import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.AudioTrack;
 import com.mineaudio.client.ClientPlaybackStateCache;
 import com.mineaudio.playback.PlaybackSession;
-import com.mineaudio.stream.MoeMusicNowPlaying;
 
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 
@@ -59,8 +58,8 @@ public final class MineAudioPlaceholders extends PlaceholderExpansion {
         return switch (params.toLowerCase(Locale.ROOT)) {
             case "playing" -> isPlaying(music, client) ? "yes" : "no";
             case "stream" -> plugin.orchestrator().streamAvailable(online) ? "yes" : "no";
-            case "title" -> music != null ? titleOf(music.track()) : moeMusicTitle();
-            case "artist" -> music != null ? music.track().metadata().author() : moeMusicArtist();
+            case "title" -> music != null ? titleOf(music.track()) : "";
+            case "artist" -> music != null ? music.track().metadata().author() : "";
             case "nowplaying" -> nowPlaying(music);
             case "state" -> client == null ? "" : client.state();
             case "position" -> client == null ? "" : formatMs(client.displayPositionMs());
@@ -72,7 +71,7 @@ public final class MineAudioPlaceholders extends PlaceholderExpansion {
     }
 
     private boolean isPlaying(PlaybackSession music, ClientPlaybackStateCache.Snapshot client) {
-        return music != null || client != null || plugin.moeMusicNowPlaying().query().isPresent();
+        return music != null || client != null;
     }
 
     private static String formatMs(long ms) {
@@ -81,29 +80,13 @@ public final class MineAudioPlaceholders extends PlaceholderExpansion {
         return String.format("%02d:%02d", totalSeconds / 60, totalSeconds % 60);
     }
 
-    private String moeMusicTitle() {
-        return plugin.moeMusicNowPlaying().query()
-                .map(now -> truncate(now.title()))
-                .orElse("");
-    }
-
-    private String moeMusicArtist() {
-        return plugin.moeMusicNowPlaying().query()
-                .map(MoeMusicNowPlaying.NowPlaying::artist)
-                .orElse("");
-    }
-
     private String nowPlaying(PlaybackSession music) {
         if (music != null) {
             String title = titleOf(music.track());
             String artist = music.track().metadata().author();
             return artist.isBlank() ? "&f" + title : "&f" + title + " &7- &f" + artist;
         }
-        return plugin.moeMusicNowPlaying().query()
-                .map(now -> now.artist().isBlank()
-                        ? "&f" + truncate(now.title())
-                        : "&f" + truncate(now.title()) + " &7- &f" + now.artist())
-                .orElse("&8未在播放");
+        return "&8未在播放";
     }
 
     private static String titleOf(AudioTrack track) {

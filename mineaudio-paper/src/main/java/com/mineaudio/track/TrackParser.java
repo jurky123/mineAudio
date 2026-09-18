@@ -79,8 +79,8 @@ public final class TrackParser {
                 return Optional.of(new AudioSource.Nbs(file));
             }
             case "STREAM" -> {
-                String provider = section.string("provider", "moemusic").trim().toLowerCase(Locale.ROOT);
-                if (provider.isEmpty()) provider = "moemusic";
+                String provider = section.string("provider", "mineaudio").trim().toLowerCase(Locale.ROOT);
+                if (provider.isEmpty()) provider = "mineaudio";
                 String source = trimToNull(section.string("source", null));
                 String id = trimToNull(section.string("id", null));
                 String uri = trimToNull(section.string("uri", null));

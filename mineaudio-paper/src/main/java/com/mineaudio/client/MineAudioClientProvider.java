@@ -14,7 +14,6 @@ import com.mineaudio.protocol.PacketType;
 import com.mineaudio.protocol.Packets;
 import com.mineaudio.protocol.ProtocolCodec;
 import com.mineaudio.playback.NoopPlaybackHandle;
-import com.mineaudio.stream.MoeMusicLegacyProvider;
 import com.mineaudio.stream.StreamPlaybackRequest;
 import com.mineaudio.stream.StreamProvider;
 import com.mineaudio.stream.resolve.ResolveException;
@@ -24,7 +23,7 @@ import com.mineaudio.stream.resolve.StreamResolverChain;
 
 /**
  * MineAudio Client Provider：服务端解析 URL、下发 PLAY，客户端直连 CDN 播放并回报状态。
- * 直链直接使用；source+id 走 Resolver 链，解析失败时回退 MoeMusic Legacy。
+ * 直链直接使用；source+id 走 Resolver 链，解析失败上报分类错误。
  */
 public final class MineAudioClientProvider implements StreamProvider {
 
@@ -33,14 +32,12 @@ public final class MineAudioClientProvider implements StreamProvider {
     private final MineAudioPlugin plugin;
     private final ClientProtocolService protocol;
     private final StreamResolverChain resolvers;
-    private final MoeMusicLegacyProvider legacy;
 
     public MineAudioClientProvider(MineAudioPlugin plugin, ClientProtocolService protocol,
-                                   StreamResolverChain resolvers, MoeMusicLegacyProvider legacy) {
+                                   StreamResolverChain resolvers) {
         this.plugin = plugin;
         this.protocol = protocol;
         this.resolvers = resolvers;
-        this.legacy = legacy;
     }
 
     @Override
@@ -122,18 +119,13 @@ public final class MineAudioClientProvider implements StreamProvider {
         return new ClientStreamHandle(plugin, protocol, player, request.sessionId());
     }
 
-    /** 解析失败：优先回退 MoeMusic Legacy；不可用时上报分类错误。 */
+    /** 解析失败：上报分类错误，交由 UI/PAPI 展示（无外部插件降级）。 */
     private void fallback(Player player, StreamPlaybackRequest request,
                           ResolvingPlaybackHandle handle, Throwable error) {
         ResolveException resolve = resolveException(error);
         String kind = resolve == null ? "RESOLVE_FAILED" : resolve.kind().name();
         String message = resolve == null ? String.valueOf(error.getMessage()) : resolve.getMessage();
-        if (legacy != null && legacy.available(player)) {
-            plugin.getLogger().info("[client] 解析失败（" + kind + "：" + message + "），回退 MoeMusic Legacy");
-            handle.attach(legacy.play(player, request));
-            return;
-        }
-        plugin.getLogger().warning("[client] 解析失败且 Legacy 不可用（" + kind + "）：" + message);
+        plugin.getLogger().warning("[client] 解析失败（" + kind + "）：" + message);
         protocol.send(player, Envelope.session(PacketType.ERROR, request.sessionId().toString(),
                 request.timing().revision(),
                 ProtocolCodec.data(new Packets.ErrorReport(kind, message))));

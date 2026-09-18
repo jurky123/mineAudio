@@ -7,7 +7,6 @@ author: ubuntu
 softdepend:
   - PackHost
   - NoteBlockAPI
-  - MoeMusic
   - MineUI
   - PlaceholderAPI
 commands:

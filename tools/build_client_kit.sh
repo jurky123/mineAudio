@@ -30,7 +30,6 @@ MineAudio Client 安装说明（26.2 · v$VERSION）
 前置（已安装可跳过，本包不再附带）：
 - Fabric API
 - MineUI 客户端（/mineaudio ui 界面用）
-- 可选：MoeMusic 客户端及其前置（Legacy 流媒体路径）
 
 安装：
 1) 把 mods/ 里的 jar 放入 .minecraft/mods

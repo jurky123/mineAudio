@@ -93,7 +93,7 @@ class TrackParserTest {
                   radio:
                     type: STREAM
                     bus: MUSIC
-                    provider: moemusic
+                    provider: mineaudio
                     source: netease
                     id: "1234567890"
                     fallback:
@@ -104,7 +104,7 @@ class TrackParserTest {
         registry.load(root, warnings::add);
 
         AudioTrack track = registry.get(Key.key("mineaudio:radio")).orElseThrow();
-        assertEquals(new AudioSource.Stream("moemusic", "netease", "1234567890", null), track.primary());
+        assertEquals(new AudioSource.Stream("mineaudio", "netease", "1234567890", null), track.primary());
         assertTrue(track.fallback() instanceof AudioSource.PackSound);
         assertTrue(warnings.isEmpty(), warnings.toString());
     }
@@ -121,7 +121,7 @@ class TrackParserTest {
         registry.load(root, warnings::add);
 
         AudioTrack track = registry.get(Key.key("mineaudio:web")).orElseThrow();
-        assertEquals(new AudioSource.Stream("moemusic", null, null, "https://cdn.example.com/a.mp3"),
+        assertEquals(new AudioSource.Stream("mineaudio", null, null, "https://cdn.example.com/a.mp3"),
                 track.primary());
     }
 

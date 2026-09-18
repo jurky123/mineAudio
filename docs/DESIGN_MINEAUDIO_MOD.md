@@ -1,5 +1,8 @@
 # MineAudio Client
 
+> **2026-09-19 更新**：MoeMusic / Concerto 兼容路径（命令桥、Legacy 降级、`/music queue` 展示解析）
+> 已从代码中全部移除；本文中相关段落仅作历史设计记录，现行实现以代码与 README 为准。
+
 > MineAudio 官方流媒体客户端
 > 状态：设计方案 v0.1
 > 日期：2026-09-18

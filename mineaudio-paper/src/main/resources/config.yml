@@ -26,16 +26,15 @@ pack:
   assume-loaded: true
 
 stream:
-  # 未检测到流媒体客户端时是否仍尝试流播放（默认关闭，按 fallback 降级）
+  # 未检测到 MineAudio Client 时是否仍尝试流播放（默认关闭，按 fallback 降级）
   assume-available: false
-  # 是否允许 uri 直链（仍交由 MoeMusic 的权限与媒体防火墙校验）
+  # 是否允许 uri 直链（客户端 MediaFirewall 仍会校验 https/主机白名单）
   http-enabled: false
   # http-enabled 时的主机白名单；留空表示不限制主机
   allowed-hosts: []
   # StreamProvider 选择顺序（前面的优先）
   provider-priority:
     - mineaudio-client
-    - moemusic
 
 # MineAudio Client（配套 mod）协议
 stream-client:
@@ -54,10 +53,8 @@ stream-client:
     https-only: true
     deny-private-network: true
     max-redirects: 5
-  legacy-moemusic:
-    enabled: true
 
-# 音源解析器（Phase 8）：source+id → 直链；失败自动回退 MoeMusic Legacy
+# 音源解析器（Phase 8）：source+id → 直链；失败上报分类错误（由 UI/PAPI 展示）
 resolvers:
   netease:
     enabled: true

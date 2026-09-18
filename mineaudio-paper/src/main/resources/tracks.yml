@@ -37,11 +37,11 @@ tracks:
 #     loop: true
 #
 #   radio:
-#     type: STREAM               # 需要服务器安装 MoeMusic 且玩家装 MoeMusic 客户端
+#     type: STREAM               # 需要玩家安装 MineAudio Client
 #     bus: MUSIC
-#     provider: moemusic
-#     source: netease            # 音源插件 ID（netease / qqmusic / kugou ...）
+#     provider: mineaudio
+#     source: netease            # 音源 ID（netease 内置解析；其他音源走直链）
 #     id: "1234567890"           # 曲目 ID；也可改用 uri: "https://..."（默认禁用）
-#     fallback:                  # 无 MoeMusic 客户端/服务端时的降级
+#     fallback:                  # 无客户端/解析失败时的降级
 #       type: PACK
 #       sound: mineaudio:music.demo

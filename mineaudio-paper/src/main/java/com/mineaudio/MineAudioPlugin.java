@@ -18,8 +18,6 @@ import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.region.RegionManager;
-import com.mineaudio.stream.MoeMusicLegacyProvider;
-import com.mineaudio.stream.MoeMusicNowPlaying;
 import com.mineaudio.stream.resolve.DirectUrlResolver;
 import com.mineaudio.stream.resolve.NeteaseEapiResolver;
 import com.mineaudio.stream.resolve.StreamResolverChain;
@@ -42,7 +40,6 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final BackendRegistry backends = new BackendRegistry();
     private final RegionManager regionManager = new RegionManager(this);
     private final EmitterManager emitterManager = new EmitterManager(this);
-    private final MoeMusicNowPlaying moeMusicNowPlaying = new MoeMusicNowPlaying(this);
     private NbsBackend nbsBackend;
     private ClientProtocolService clientProtocol;
     private AudioOrchestrator orchestrator;
@@ -66,13 +63,8 @@ public final class MineAudioPlugin extends JavaPlugin {
         clientProtocol.register();
         StreamBackend streamBackend = new StreamBackend(this);
         StreamResolverChain resolvers = createResolvers();
-        MoeMusicLegacyProvider legacyProvider = new MoeMusicLegacyProvider(this);
-        streamBackend.register(new MineAudioClientProvider(this, clientProtocol, resolvers, legacyProvider));
-        streamBackend.register(legacyProvider);
+        streamBackend.register(new MineAudioClientProvider(this, clientProtocol, resolvers));
         backends.register(streamBackend);
-        if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
-            getLogger().info("未检测到 MoeMusic，流媒体 Legacy 路径不可用（安装 MineAudio Client 后不受影响）");
-        }
         PlayerPackStatus packStatus = new PlayerPackStatus(this);
         PlayerStreamStatus streamStatus = new PlayerStreamStatus(this, clientProtocol);
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends,
@@ -213,10 +205,6 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public AudioUi audioUi() {
         return audioUi;
-    }
-
-    public MoeMusicNowPlaying moeMusicNowPlaying() {
-        return moeMusicNowPlaying;
     }
 
     public ClientProtocolService clientProtocol() {

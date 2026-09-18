@@ -35,7 +35,7 @@ public sealed interface AudioSource {
      * <p>
      * 两种写法二选一：
      * <ul>
-     *   <li>稳定引用：{@code provider + source + id}（如 moemusic + netease + 歌曲 ID）</li>
+     *   <li>稳定引用：{@code provider + source + id}（如 mineaudio + netease + 歌曲 ID）</li>
      *   <li>直链：{@code provider + uri}（默认禁用，需管理员开启并配置白名单）</li>
      * </ul>
      */

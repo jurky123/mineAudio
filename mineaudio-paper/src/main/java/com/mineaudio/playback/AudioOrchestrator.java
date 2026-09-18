@@ -230,7 +230,7 @@ public final class AudioOrchestrator implements MineAudio {
         return state == null ? null : state.music();
     }
 
-    /** 该玩家是否有可用的流媒体客户端（MoeMusic mod）。 */
+    /** 该玩家是否有可用的流媒体客户端（MineAudio Client）。 */
     public boolean streamAvailable(Player player) {
         return streamStatus.streamAvailable(player);
     }

@@ -19,7 +19,7 @@ class SourceResolverTest {
 
     private static final AudioSource PACK = new AudioSource.PackSound(Key.key("mineaudio:music.spawn"));
     private static final AudioSource VANILLA = new AudioSource.VanillaSound(Key.key("minecraft:music.overworld.forest"));
-    private static final AudioSource STREAM = new AudioSource.Stream("moemusic", "netease", "123", null);
+    private static final AudioSource STREAM = new AudioSource.Stream("mineaudio", "netease", "123", null);
 
     private static AudioTrack track(AudioSource primary, AudioSource fallback) {
         return new AudioTrack(Key.key("mineaudio:test"), AudioBus.MUSIC, primary, fallback,

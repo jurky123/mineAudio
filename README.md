@@ -6,7 +6,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 - **Resource Pack OGG**：高音质、原版客户端可听、支持位置声，适合游戏音效与环境音
 - **Note Block（NBS）**：音符盒音乐，不增加大型资源包
-- **Streaming（MoeMusic）**：服务端只发播放控制与歌曲引用，装了 MoeMusic 客户端的玩家直连网易云/QQ 等音源，服务端不代理音频流
+- **Streaming（自研客户端）**：服务端解析直链并下发播放控制，装了 MineAudio Client 的玩家直连音源，服务端不代理音频流
 
 业务插件（MineUNO / MineChess / MineAgent 等）只依赖统一的 `com.mineaudio.api`，不关心声音由哪种 Backend 播放。
 
@@ -18,7 +18,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 ## 特性（V1）
 
 - 三种来源：`PACK` 资源包声音、`VANILLA` 原版声音、`NBS` 音符盒曲目（NoteBlockAPI）
-- 流媒体：`STREAM` 曲目经 MoeMusic 命令桥全服同步播放，按玩家客户端能力自动 fallback
+- 流媒体：`STREAM` 曲目由服务端解析直链、自研客户端播放；每玩家会话，支持同步 / 暂停 / 定位 / 音量
 - 四种 Bus：`MUSIC`（每人一条）、`AMBIENT`（多层）、`SFX` / `UI`（短音效）
 - 范围：单玩家 / 全服 / 世界 / 区域 / 发声点（Emitter）
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
@@ -36,7 +36,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 ./deploy.sh                                       # 部署到 /home/ubuntu/minecraft
 
-./tools/build_client_kit.sh                       # 生成玩家客户端安装包（MineUI + MoeMusic 及依赖）
+./tools/build_client_kit.sh                       # 生成玩家客户端安装包（只含 MineAudio Client）
 ```
 
 `deploy.sh` 会构建插件、生成资源包、复制 NBS 曲目，并把 `mineaudio.zip` 放进
@@ -48,7 +48,6 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 - Paper `26.2`（`26.2.build.124-stable` 编译）
 - 可选 [NoteBlockAPI](https://modrinth.com/plugin/noteblockapi) 1.7.0：只影响 NBS 曲目，未安装时 PACK / Vanilla 不受影响
-- 可选 [MoeMusic](https://modrinth.com/mod/moemusic)（Spigot/Paper 插件 + 客户端 mod）：只影响 STREAM 曲目
 - 可选 PackHost：资源包托管；没有时 PACK 声音按 `pack.assume-loaded` 处理
 
 ## 配置
@@ -67,8 +66,8 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 | `emitter-poll-interval-ticks` | 5 | 红石 Emitter 轮询间隔 |
 | `nbs.position-distance` | 32 | NBS 位置声默认可听距离 |
 | `pack.assume-loaded` | true | 未跟踪到资源包状态时是否视为已加载 |
-| `stream.assume-available` | false | 未检测到 MoeMusic 客户端 mod 时是否仍尝试流播放 |
-| `stream.http-enabled` | false | 是否允许 `uri` 直链（仍交由 MoeMusic 权限与媒体防火墙） |
+| `stream.assume-available` | false | 未检测到 MineAudio Client 时是否仍尝试流播放 |
+| `stream.http-enabled` | false | 是否允许 `uri` 直链（客户端 MediaFirewall 仍会校验） |
 | `stream.allowed-hosts` | `[]` | `uri` 直链主机白名单，留空表示不限制 |
 | `debug` | false | 输出播放选源等调试日志 |
 
@@ -91,7 +90,7 @@ tracks:
     file: tavern.nbs            # 只允许 plugins/MineAudio/nbs/ 下的文件名
     loop: true
   radio:
-    type: STREAM                # 需要服务端 MoeMusic + 玩家 MoeMusic 客户端
+    type: STREAM                # 需要玩家安装 MineAudio Client
     provider: moemusic
     source: netease             # 音源插件 ID（netease / qqmusic / kugou ...）
     id: "1234567890"            # 曲目 ID；也可用 uri: "https://..."（默认禁用）
@@ -150,41 +149,42 @@ emitters:
     loop: true
 ```
 
-## 流媒体（MoeMusic）
+## 流媒体（自研客户端）
 
-MineAudio 不代理音频，只负责“什么时候播什么”：
+MineAudio 全链路自研：服务端解析直链并下发播放控制，玩家安装 MineAudio Client 后直连音源，
+服务端不代理音频流，不依赖任何第三方音乐插件。
 
 ```text
-MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享队列）
-                                                        │ 只发同步与控制信令
-                                          ┌─────────────┼─────────────┐
-                                          ▼             ▼             ▼
-                                     客户端 A       客户端 B       客户端 C
-                                        └──── 各自直连网易云/QQ/酷狗 CDN ────┘
+MineAudio  --解析直链 + 下发 PLAY-->  MineAudio Client（本地解码播放）
+     │                                     │ 状态上报（位置/缓冲/错误）
+     └── Resolver（直链 / 网易 eapi）   直连 CDN（HTTPS + MediaFirewall）
 ```
 
 使用步骤：
 
-1. 服务端安装 [MoeMusic](https://modrinth.com/mod/moemusic)（Spigot/Paper 1.18.2+）并把音源插件放入 `plugins/MoeMusic/plugins/`（网易云/QQ/酷狗/Bilibili 等，见其 [插件列表](https://github.com/lolicode-org/MoeMusic/wiki)）
-2. 玩家安装对应 Minecraft 版本的 MoeMusic 客户端 mod，进服后 MineAudio 通过 `moemusic:client_handshake` 通道自动识别
-3. 在 `tracks.yml` 定义 `type: STREAM` 曲目，`/mineaudio play <曲目> global` 即可全服点播
+1. 玩家安装 `mineaudio-client-kit`（`tools/build_client_kit.sh` 生成），进服后经 `mineaudio:stream` 通道自动握手
+2. 在 `tracks.yml` 定义 `type: STREAM` 曲目（`uri` 直链或 `source + id`，如网易云）
+3. `/mineaudio play <曲目> global` 点播；支持暂停/继续/定位/音量，`/mineaudio ui` 有完整界面
 
-能力与限制（`AudioCapabilities` 如实反映）：
+能力（`AudioCapabilities` 如实反映）：
 
-| 能力 | MoeMusic | 说明 |
+| 能力 | 自研客户端 | 说明 |
 | --- | --- | --- |
-| 同步播放 | ✓ | MoeMusic 负责进度对齐，晚进服也能跟上 |
-| 暂停 / 继续 / 停止 | ✓ | 转成 `/music pause|resume|stop` |
-| Seek | ✗ | 外部命令桥无此能力 |
-| 多会话 | ✗ | 服务端是**一个共享队列**，因此 STREAM 只支持 `global` 播放 |
-| 位置声 / 歌词 | ✗ | 客户端 mod 内部能力，未对外开放 |
-| 无客户端降级 | ✓ | 配了 `fallback` 的玩家走资源包/NBS；未装且无 fallback 则静默跳过（不报错） |
+| 同步播放 | ✓ | 服务端校时 + 客户端本地时钟对齐，晚进服也能跟上 |
+| 暂停 / 继续 / 停止 | ✓ | 协议指令下发，服务端权威 |
+| Seek | ✓ | 命令与界面都支持（绝对定位 / ±15s） |
+| 音量 | ✓ | 运行时音量，自动跟随游戏设置 |
+| 多会话 | ✓ | 每位玩家独立会话，可 per-player / per-region |
+| 位置声 | ✓ | 3D 定位播放 |
+| 无客户端降级 | ✓ | 配了 `fallback` 的玩家走资源包/NBS；未装且无 fallback 则不可播 |
 
 注意事项：
 
-- 客户端 IP 会直接暴露给音源 CDN，MoeMusic 客户端内置 Media Firewall 黑白名单负责校验；MineAudio 不绕过
-- `uri` 直链默认禁用；开启 `stream.http-enabled` 后仍受 `stream.allowed-hosts` 白名单和 MoeMusic 自身权限约束
-- 内容过滤、限流、单曲时长策略由 MoeMusic 服务端配置负责，MineAudio 不重复实现
+- 客户端 IP 直连音源 CDN；客户端内置 MediaFirewall（HTTPS-only、私网拦截、白黑名单、逐跳重定向校验）
+- `uri` 直链默认禁用；开启 `stream.http-enabled` 后仍受 `stream.allowed-hosts` 白名单约束
+- 网易 `source + id` 由服务端最小 eapi Resolver 解析（`resolvers.netease.*`）；
+  凭证只从环境变量/文件读取，不落配置、不进日志、不下发客户端
+- 解析失败按分类上报（`UNSUPPORTED_SOURCE / CREDENTIAL_MISSING / NOT_PLAYABLE / …`），UI 与 Toast 直接展示
 
 ## 音乐界面（MineUI）
 
@@ -216,26 +216,8 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 - 页面按钮：暂停/继续/停止/±15s 定位/音量 ±10%/HUD 开关；键位：`F7`(槽位1) 打开界面、`F8`(槽位2) 切换 HUD（可在原版按键设置改键）
 - `/mineaudio hud` 切换“正在播放”HUD（右上角，MineUI 0.8+ 客户端；节点定义 `hud.json`，进度条同样插值）
 - 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
-- MoeMusic 自带的客户端界面（搜索 / 队列 / 歌词，按 `M` 打开）是 mod 内置界面，
-  无法并入 MineUI 页面；MineAudio 界面只做服务端可控的状态与控制
 - 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`（HUD 为 `hud.json`）
-- 后续（Phase 3 剩余）：搜索、队列、歌词（依赖 MoeMusic 对外能力开放）
-
-### MoeMusic 客户端 HUD（左上角旋转唱片卡片）
-
-那张卡片是 MoeMusic **客户端 mod 本地渲染**的 HUD，服务端（包括 MineAudio）无法把它移进计分板或从服务端缩放；玩家可以自行调整：
-
-- 游戏内按 `M` → 设置：`anchor`（屏幕四角）、`vertical_size`（大小）、`show_cover` / `spin_cover`（唱片与旋转）、`enabled`（关闭）
-- 或编辑 `.minecraft/config/moemusic/moemusic.toml` 的 `[client.now_playing_hud]`：
-  ```toml
-  enabled = true
-  anchor = "TOP_RIGHT"
-  vertical_size = 32
-  show_cover = false
-  ```
-- 只想看计分板的话，把 `enabled = false` 关掉 HUD 即可
-
-计分板的 `%mineaudio:nowplaying%`：优先显示 MineAudio 自己发起的播放；如果是通过 MoeMusic 界面/命令点歌，MineAudio 会解析 `/music queue` 输出尽力获取当前曲目（best effort，MoeMusic 改输出格式时可能失效，此时退化为 `未在播放`）。
+- 后续（Phase 3 剩余）：搜索、队列、歌词（等 MineUI 通用能力）
 
 ### 计分板占位符（PlaceholderAPI）
 
@@ -246,7 +228,7 @@ MineAudio 注册 `mineaudio` 扩展（需服务器安装 PlaceholderAPI），可
 | `%mineaudio:nowplaying%` | 当前播放，如 `稻香 - 周杰伦`；无播放时为 `未在播放` |
 | `%mineaudio:title%` / `%mineaudio:artist%` | 标题 / 作者（流媒体曲目取自 tracks.yml 的 `title` / `author`） |
 | `%mineaudio:playing%` | `yes` / `no` |
-| `%mineaudio:stream%` | 该玩家是否装了 MoeMusic 客户端：`yes` / `no` |
+| `%mineaudio:stream%` | 该玩家是否可流播放（已装 MineAudio Client）：`yes` / `no` |
 
 TAB 示例（本服已配置）：
 
@@ -345,7 +327,7 @@ mineAudio/
 │       ├── playback/   # AudioOrchestrator / 会话状态 / 选源
 │       ├── region/     # 形状 / 索引 / 迟滞 / 优先级 / 持久化
 │       ├── emitter/    # 发声点与触发
-│       ├── stream/     # StreamProvider / MoeMusicProvider 命令桥
+│       ├── stream/     # StreamProvider / Resolver 链路
 │       ├── track/      # Track / Cue 注册表与解析
 │       ├── profile/    # 每玩家资源包与流媒体客户端状态
 │       └── command/    # /mineaudio
@@ -360,8 +342,8 @@ mineAudio/
 V1 已完成：PACK / Vanilla / NBS、四种 Bus、Player/Global/World/Region/Emitter 范围、
 Cuboid/Sphere 区域与优先级、红石 Emitter、Cue 与 Fallback、Java API、`/mineaudio debug`。
 
-Phase 2 已完成（MoeMusic 部分）：`STREAM` 曲目、MoeMusic 命令桥、全服同步播放、
-按玩家客户端能力 fallback、`moemusic:client_handshake` 能力探测。
+Phase 2 已完成：`STREAM` 曲目、自研流媒体客户端（协议/握手/校时/安全媒体链路）、
+按玩家能力 fallback；MoeMusic 兼容路径（命令桥、Legacy 降级、展示解析）已全部移除。
 
 Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 + 进度条 / 暂停继续停止 / ±15s 定位 /
 音量调整 / 曲目点播 / 环境音 / 解析状态与失败分类）、“正在播放”HUD（`/mineaudio hud`）、
@@ -369,7 +351,7 @@ Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 + 进�
 
 后续阶段见 [docs/PLAN.md](docs/PLAN.md)：
 
-- Phase 2.5：Concerto Adapter（可选）、`uri` 直链白名单细化
-- Phase 3 剩余：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
+- Phase 2.5：`uri` 直链白名单细化
+- Phase 3 剩余：搜索、队列、歌词（等 MineUI 通用能力）
 - Phase 4：WorldGuard Adapter、时间与天气条件、播放列表
-- Phase 5：MineAudio Client（真正的 per-player stream 与空间音频）
+- Phase 5：空间音频、多音源扩展（QQ/酷狗等）

@@ -29,7 +29,6 @@ import com.mineaudio.api.PlaybackState;
 import com.mineaudio.client.ClientPlaybackStateCache;
 import com.mineaudio.playback.PlaybackSession;
 import com.mineaudio.playback.StatusAware;
-import com.mineaudio.stream.MoeMusicNowPlaying;
 import com.mineaudio.ui.AudioUi;
 import com.mineui.api.MineUi;
 import com.mineui.api.MineUiProvider;
@@ -58,6 +57,7 @@ public final class MineUiIntegration implements AudioUi {
     private final Map<UUID, MineUiSession> sessions = new HashMap<>();
     private final Map<UUID, MineUiSession> hudSessions = new HashMap<>();
     private final Map<UUID, BukkitTask> refreshers = new HashMap<>();
+    private final Map<UUID, BukkitTask> hudRefreshers = new HashMap<>();
     private final Map<UUID, List<Key>> trackOrder = new HashMap<>();
     private final Map<UUID, Float> volumes = new HashMap<>();
     private final Map<UUID, String> lastStatus = new HashMap<>();
@@ -101,14 +101,16 @@ public final class MineUiIntegration implements AudioUi {
         UUID playerId = player.getUniqueId();
         MineUiSession existing = hudSessions.remove(playerId);
         if (existing != null) {
+            stopHudRefresher(playerId);
             if (!existing.closed()) existing.close();
             return false;
         }
         MineUiSession hud = api.openHud(plugin, player, APP, "hud", hudPage,
                 new HudLayout("top_right", 6f, 6f, 1f));
         hudSessions.put(playerId, hud);
-        push(player, sessions.get(playerId));
+        pushHud(player);
         hud.snapshot();
+        startHudRefresher(player);
         return true;
     }
 
@@ -190,6 +192,7 @@ public final class MineUiIntegration implements AudioUi {
     private void quit(Player player) {
         close(player);
         UUID playerId = player.getUniqueId();
+        stopHudRefresher(playerId);
         MineUiSession hud = hudSessions.remove(playerId);
         if (hud != null && !hud.closed()) {
             hud.close();
@@ -208,6 +211,7 @@ public final class MineUiIntegration implements AudioUi {
             }
         }
         for (UUID playerId : List.copyOf(hudSessions.keySet())) {
+            stopHudRefresher(playerId);
             MineUiSession hud = hudSessions.remove(playerId);
             if (hud != null && !hud.closed()) {
                 hud.close();
@@ -226,20 +230,11 @@ public final class MineUiIntegration implements AudioUi {
         String status = "";
         if (music == null) {
             lastStatus.remove(player.getUniqueId());
-            MoeMusicNowPlaying.NowPlaying moe = plugin.moeMusicNowPlaying().query().orElse(null);
-            if (moe != null) {
-                session.state("title", moe.title());
-                session.state("subtitle", moe.artist().isBlank() ? "MoeMusic" : moe.artist());
-                session.state("state", "PLAYING");
-                session.state("backend", "moemusic");
-                session.state("origin", "GLOBAL");
-            } else {
-                session.state("title", "暂无音乐");
-                session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
-                session.state("state", "IDLE");
-                session.state("backend", "-");
-                session.state("origin", "-");
-            }
+            session.state("title", "暂无音乐");
+            session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
+            session.state("state", "IDLE");
+            session.state("backend", "-");
+            session.state("origin", "-");
         } else {
             AudioTrack track = music.track();
             session.state("title", track.metadata().title().isBlank()
@@ -305,8 +300,8 @@ public final class MineUiIntegration implements AudioUi {
         if (hud == null || hud.closed()) return;
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         ClientPlaybackStateCache.Snapshot progress = music == null ? null : snapshotOf(player, music);
-        hud.state("active", music != null);
         if (music != null) {
+            hud.state("active", true);
             AudioTrack track = music.track();
             hud.state("title", track.metadata().title().isBlank()
                     ? track.id().asString() : track.metadata().title());
@@ -317,6 +312,7 @@ public final class MineUiIntegration implements AudioUi {
             hud.state("status", status);
             hud.state("status_visible", !status.isBlank());
         } else {
+            hud.state("active", false);
             hud.state("title", "未在播放");
             hud.state("subtitle", "");
             hud.state("state", "IDLE");
@@ -433,6 +429,25 @@ public final class MineUiIntegration implements AudioUi {
 
     private void stopRefresher(UUID playerId) {
         BukkitTask task = refreshers.remove(playerId);
+        if (task != null) task.cancel();
+    }
+
+    private void startHudRefresher(Player player) {
+        UUID playerId = player.getUniqueId();
+        stopHudRefresher(playerId);
+        BukkitTask task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            MineUiSession hud = hudSessions.get(playerId);
+            if (hud == null || hud.closed() || !player.isOnline()) {
+                stopHudRefresher(playerId);
+                return;
+            }
+            pushHud(player);
+        }, 20L, 20L);
+        hudRefreshers.put(playerId, task);
+    }
+
+    private void stopHudRefresher(UUID playerId) {
+        BukkitTask task = hudRefreshers.remove(playerId);
         if (task != null) task.cancel();
     }
 
