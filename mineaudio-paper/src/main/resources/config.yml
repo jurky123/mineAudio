@@ -1,0 +1,25 @@
+# MineAudio 主配置
+#
+# 详解见 docs/PLAN.md；
+# tracks.yml / cues.yml / regions.yml / emitters.yml 分别管理曲目、音效事件、区域与发声点。
+
+# 区域检测间隔（tick）：每多少 tick 检查一次玩家所在区域
+region-check-interval-ticks: 10
+
+# 区域边界迟滞，避免站在边缘反复切歌
+region-enter-delay-ms: 300
+region-exit-delay-ms: 500
+
+# AMBIENT 最大同时层数，避免噪音叠加
+max-ambient-layers: 3
+
+# 红石 Emitter 轮询间隔（tick）
+emitter-poll-interval-ticks: 5
+
+pack:
+  # 无 PackHost / 未跟踪到资源包状态时，默认视为已加载；
+  # 收到玩家资源包加载失败事件后自动按未加载处理（走 fallback）
+  assume-loaded: true
+
+# 输出更多日志，便于排查
+debug: false

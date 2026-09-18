@@ -1,0 +1,17 @@
+name: MineAudio
+version: '${version}'
+main: com.mineaudio.MineAudioPlugin
+api-version: '26.2'
+description: 统一音乐 / 环境音 / 游戏音效基础设施
+author: ubuntu
+softdepend:
+  - PackHost
+  - NoteBlockAPI
+commands:
+  audio:
+    description: MineAudio 主命令
+    usage: /audio
+permissions:
+  mineaudio.admin:
+    description: 允许 /audio 管理命令
+    default: op

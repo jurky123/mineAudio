@@ -1,0 +1,4 @@
+allprojects {
+    group = 'com.mineaudio'
+    version = providers.gradleProperty('mineaudio_version').get()
+}

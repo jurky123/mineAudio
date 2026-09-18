@@ -17,7 +17,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 ## 开发状态
 
-设计阶段，尚未开始编码。
+开发中：M0 工程骨架已完成（Gradle 多模块、插件骨架、`/audio` 命令与配置加载、deploy.sh），实施进度见 [落地方案](docs/PLAN.md)。
 
 ## 目录规划
 
