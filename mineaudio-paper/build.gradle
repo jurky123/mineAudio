@@ -30,6 +30,9 @@ dependencies {
     compileOnly project(':mineaudio-api')
     compileOnly "com.github.koca2000:NoteBlockAPI:${noteblockapi_version}"
 
+    // 单测需要 YamlConfiguration 等 Bukkit 配置类，以及 api 模块的模型
+    testImplementation "io.papermc.paper:paper-api:${paper_version}"
+    testImplementation project(':mineaudio-api')
     testImplementation platform('org.junit:junit-bom:6.1.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

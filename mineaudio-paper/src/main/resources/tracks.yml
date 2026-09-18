@@ -1,0 +1,23 @@
+# MineAudio 曲目（MUSIC / AMBIENT / NBS 等完整音频）
+#
+# 示例：
+# tracks:
+#   spawn:
+#     type: PACK                 # PACK | VANILLA | NBS
+#     bus: MUSIC                 # MUSIC | AMBIENT | SFX | UI，默认 MUSIC
+#     sound: mineaudio:music.spawn
+#     duration: 180000           # 毫秒；PACK / VANILLA 循环必须提供
+#     loop: true
+#     volume: 0.7
+#     title: 出生点主题曲
+#     author: jzk
+#     fallback:                  # 资源包未加载时降级
+#       type: VANILLA
+#       sound: minecraft:music.overworld.forest
+#
+#   tavern:
+#     type: NBS
+#     bus: MUSIC
+#     file: tavern.nbs           # 只允许 nbs/ 目录下的文件名
+#     loop: true
+tracks: {}
