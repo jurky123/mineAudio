@@ -24,6 +24,7 @@
 - WorldGuard、时间/天气条件、播放列表、Shuffle → Phase 4
 - MineAudio 客户端 mod（真正的 per-player stream / 空间音频）→ Phase 5
 - PackHost 独立仓库与 `PackHostApi` → 独立小项目（跨仓库，见 §11）
+- MineUNO / MineChess 接入（迁移 `playSound` 到 MineAudio API）→ 已确认放 V1 之后
 
 ## 2. 技术基线
 
@@ -264,8 +265,9 @@ emitters:
 | M4 Region | 形状、chunk 索引、迟滞、优先级、世界层、ambient 层数、region 命令持久化 | 单测 + 游戏内重叠区域进出验证 |
 | M5 Emitter | 模型、ALWAYS/REDSTONE/COMMAND/INTERACT、位置声、emitter 命令持久化 | 红石开关验证、距离衰减 |
 | M6 资源包 | pack/、gen_pack.py、示例音频、deploy.sh 联动 PackHost | 客户端听到自定义音效 |
-| M7 业务接入 | MineUNO / MineChess 迁移 `playSound` 到 MineAudio API（跨仓库，先确认） | 各仓库单独提交验证 |
-| M8 收尾 | README（命令/配置/素材规范）、V1 验收走查、汇总仓库登记 | §77 清单逐项通过 |
+| M7 收尾 | README（命令/配置/素材规范）、V1 验收走查 | §77 清单（业务接入除外）逐项通过 |
+
+V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 
 ## 10. 验收方式（对照 §77）
 
@@ -275,12 +277,12 @@ emitters:
 4. 红石 Emitter 开关正常启停，位置声有距离衰减。
 5. 资源包未加载 / NoteBlockAPI 未安装时走 fallback 或静默跳过，无报错。
 6. `/audio debug` 输出玩家当前各 Bus、Region 栈、选中 Track、Backend 与能力状态。
-7. MineUNO / MineChess 接入后旧 `player.playSound` 调用被 API 取代（各自仓库验收）。
+7. MineUNO / MineChess 接入不在 V1 范围，等 API 稳定后单独进行与验收（见 §9 尾注）。
 
 ## 11. 跨仓库事项（动手前需确认）
 
 1. **PackHost**：V1 不改 mineUNO/PackHost，只把 `mineaudio.zip` 放进其 `packs/`；设计文档 §49–50 的独立仓库 + `PackHostApi` 是独立小项目，建议 V1 之后再做。
-2. **MineUNO / MineChess 接入**：需分别修改两个仓库（加 `mineaudio-api` 依赖 + softdepend + 替换 playSound），按 AGENTS.md 需事后确认再动；计划在 API 冻结后每个仓库一个聚焦提交。
+2. **MineUNO / MineChess 接入（已确认放 V1 之后）**：V1 期间不改这两个仓库；等 API 冻结并实测稳定后再分别接入（加编译期依赖 + softdepend + 替换 playSound），每个仓库一个聚焦提交。
 3. **NoteBlockAPI 1.7.0**：需安装到服务器 `plugins/`（纯库插件，无配置无命令）；不装则 NBS 不可用。
 4. **汇总仓库**：把 mineAudio 注册为 submodule，并更新 `README.md` 插件一览与 `AGENTS.md` 项目索引。
 
@@ -289,5 +291,5 @@ emitters:
 1. **World BGM 配置形态**：本方案用 `regions.yml` 的 `worlds:` 段（priority 0）；也可以强制用覆盖全世界的 CUBOID Region。倾向 `worlds:`，语义清晰。
 2. **Cue 注册方式**：本方案同时支持 `cues.yml` 与 `registerCue`（业务插件自带、随插件注销）。若希望 V1 更小，可以只留 `cues.yml`。
 3. **Region 编辑命令**：本方案用 `pos1/pos2/create`（不依赖 WorldEdit）；Sphere 用 `/audio region sphere <半径>` 以玩家位置为中心。
-4. **流媒体 Adapter 的启动时机**：V1 完成后是否马上做 MoeMusic Adapter（Phase 2），还是先把 MineUNO/MineChess 接入跑稳。
+4. **流媒体 Adapter 的启动时机**：V1 完成后是否马上做 MoeMusic Adapter（Phase 2）。业务接入已确认放后，届时可直接评估。
 5. **API 版本策略**：V1 先与插件同版本号（0.1.0）；是否现在就把 `mineaudio-api` 独立发版/独立仓库，倾向暂不，等第二个消费者接入后再拆。
