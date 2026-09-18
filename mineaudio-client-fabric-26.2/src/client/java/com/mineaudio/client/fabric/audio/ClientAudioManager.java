@@ -150,6 +150,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
         private final PcmAudioStream stream = new PcmAudioStream(ring);
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
+        private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
 
         private volatile ChannelAccess.ChannelHandle handle;
         private volatile float volume;
@@ -171,6 +172,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         void start() {
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                    "[audio] PLAY session={} url={} startPos={}ms volume={} spatial={}",
+                    id, url, startPositionMs, volume, spatial != null);
             decoder.start(url, startPositionMs, this);
             ChannelAccess access = channelAccess;
             if (access == null) {
@@ -178,6 +182,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 return;
             }
             access.createHandle(Library.Pool.STREAMING).thenAccept(created -> {
+                if (created == null) {
+                    fail("NO_CHANNEL", "声音通道池已满或设备不可用");
+                    return;
+                }
                 if (closed) {
                     created.release();
                     return;
@@ -188,7 +196,14 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     channel.setVolume(effectiveVolume());
                     applySpatial(channel);
                     channel.play();
+                    com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                            "[audio] 通道已启动 session={} effectiveVolume={} musicVolume={}",
+                            id, effectiveVolume(),
+                            Minecraft.getInstance().options.getSoundSourceVolume(SoundSource.MUSIC));
                 });
+            }).exceptionally(t -> {
+                fail("CHANNEL_ERROR", t.toString());
+                return null;
             });
         }
 
@@ -250,8 +265,15 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             ChannelAccess.ChannelHandle current = handle;
             handle = null;
             if (current != null) {
-                current.execute(Channel::stop);
-                current.release();
+                current.execute(channel -> {
+                    channel.stop();
+                    try {
+                        current.release();
+                    } catch (Throwable t) {
+                        com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                                "[audio] 释放通道失败 session={}：{}", id, t.toString());
+                    }
+                });
             }
         }
 
@@ -319,6 +341,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onPcm(byte[] data, int length, long timecodeMs) {
+            if (firstPcm.compareAndSet(false, true)) {
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                        "[audio] 收到首批 PCM session={} bytes={} timecode={}ms", id, length, timecodeMs);
+            }
             int offset = 0;
             while (offset < length && !closed) {
                 int written = ring.write(data, offset, length - offset);
