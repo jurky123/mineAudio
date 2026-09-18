@@ -25,7 +25,8 @@ import com.sedmelluq.discord.lavaplayer.track.playback.AudioFrame;
  */
 public final class LavaPlayerDecoder implements AudioDecoder {
 
-    public static final AudioDataFormat FORMAT = StandardAudioDataFormats.COMMON_PCM_S16_LE;
+    /** 输出 48kHz/16bit/立体声 LE，与客户端 OpenAL 声明的 {@link javax.sound.sampled.AudioFormat} 一致。 */
+    public static final AudioDataFormat FORMAT = StandardAudioDataFormats.DISCORD_PCM_S16_LE;
 
     private static final AudioPlayerManager MANAGER = createManager();
 

@@ -158,6 +158,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final PcmAudioStream stream = new PcmAudioStream(ring);
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
         private int ticks;
 
         private volatile ChannelAccess.ChannelHandle handle;
@@ -184,6 +185,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     "[audio] PLAY session={} url={} startPos={}ms volume={} spatial={}",
                     id, url, startPositionMs, volume, spatial != null);
             decoder.start(url, startPositionMs, this);
+        }
+
+        /** 首批 PCM 到达后再创建 OpenAL 通道，避免排一堆静音导致 underrun。 */
+        private void ensureChannel() {
+            if (channelRequested.compareAndSet(false, true) == false) return;
             ChannelAccess access = channelAccess;
             if (access == null) {
                 fail("NO_CHANNEL", "客户端音频通道不可用");
@@ -205,9 +211,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     applySpatial(channel);
                     channel.play();
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                            "[audio] 通道已启动 session={} effectiveVolume={} musicVolume={}",
+                            "[audio] 通道已启动 session={} effectiveVolume={} musicVolume={} ring={}B",
                             id, effectiveVolume(),
-                            Minecraft.getInstance().options.getSoundSourceVolume(SoundSource.MUSIC));
+                            Minecraft.getInstance().options.getSoundSourceVolume(SoundSource.MUSIC),
+                            ring.available());
                 });
             }).exceptionally(t -> {
                 fail("CHANNEL_ERROR", t.toString());
@@ -376,7 +383,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onPcm(byte[] data, int length, long timecodeMs) {
-            if (firstPcm.compareAndSet(false, true)) {
+            boolean first = firstPcm.compareAndSet(false, true);
+            if (first) {
                 int peak = 0;
                 for (int i = 0; i + 1 < length; i += 2) {
                     int sample = (short) ((data[i] & 0xFF) | (data[i + 1] << 8));
@@ -398,6 +406,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     continue;
                 }
                 offset += written;
+            }
+            if (first) {
+                ensureChannel();
             }
         }
 
