@@ -13,6 +13,10 @@
 > Phase 5/6 播放路径接入 MediaFirewall + 本机网关 + MediaCache、播放音乐时压制原版背景音乐。
 > 待办：MoeMusic source+id 的 Resolver（Phase 8）、MineUI 联动与 `/mineaudio` 客户端控制收尾、
 > MineUNO/MineChess 接入。
+> Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
+> （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +
+> 解析失败自动回退 MoeMusic Legacy；凭证（MUSIC_U）仅从环境变量 `MINEAUDIO_NETEASE_MUSIC_U` 读取，
+> 不落配置、不进日志、不下发客户端。无凭证时匿名尝试，失败即降级。
 
 ## 1. V1 范围
 

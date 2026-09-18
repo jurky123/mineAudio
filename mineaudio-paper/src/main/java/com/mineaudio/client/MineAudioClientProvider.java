@@ -14,12 +14,17 @@ import com.mineaudio.protocol.PacketType;
 import com.mineaudio.protocol.Packets;
 import com.mineaudio.protocol.ProtocolCodec;
 import com.mineaudio.playback.NoopPlaybackHandle;
+import com.mineaudio.stream.MoeMusicLegacyProvider;
 import com.mineaudio.stream.StreamPlaybackRequest;
 import com.mineaudio.stream.StreamProvider;
+import com.mineaudio.stream.resolve.ResolveException;
+import com.mineaudio.stream.resolve.ResolveRequest;
+import com.mineaudio.stream.resolve.ResolveResult;
+import com.mineaudio.stream.resolve.StreamResolverChain;
 
 /**
  * MineAudio Client Provider：服务端解析 URL、下发 PLAY，客户端直连 CDN 播放并回报状态。
- * V1 支持直链（uri）；source+id 的服务端 Resolver 在后续阶段接入。
+ * 直链直接使用；source+id 走 Resolver 链，解析失败时回退 MoeMusic Legacy。
  */
 public final class MineAudioClientProvider implements StreamProvider {
 
@@ -27,10 +32,15 @@ public final class MineAudioClientProvider implements StreamProvider {
 
     private final MineAudioPlugin plugin;
     private final ClientProtocolService protocol;
+    private final StreamResolverChain resolvers;
+    private final MoeMusicLegacyProvider legacy;
 
-    public MineAudioClientProvider(MineAudioPlugin plugin, ClientProtocolService protocol) {
+    public MineAudioClientProvider(MineAudioPlugin plugin, ClientProtocolService protocol,
+                                   StreamResolverChain resolvers, MoeMusicLegacyProvider legacy) {
         this.plugin = plugin;
         this.protocol = protocol;
+        this.resolvers = resolvers;
+        this.legacy = legacy;
     }
 
     @Override
@@ -70,32 +80,69 @@ public final class MineAudioClientProvider implements StreamProvider {
     public PlaybackHandle play(Player player, StreamPlaybackRequest request) {
         if (!available(player)) return NoopPlaybackHandle.stopped();
         AudioSource.Stream stream = request.source();
-        String url = stream.uri();
-        if (url == null) {
-            plugin.getLogger().warning("[client] 流媒体曲目缺少可播放 URL（Resolver 未接入）："
-                    + stream.source() + ":" + stream.id());
-            return NoopPlaybackHandle.stopped();
-        }
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolveRequest resolveRequest = new ResolveRequest(stream.source(), stream.id(), stream.uri());
+        resolvers.resolve(resolveRequest).whenComplete((result, error) ->
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (handle.cancelled()) return;
+                    if (error != null) {
+                        fallback(player, request, handle, error);
+                        return;
+                    }
+                    handle.attach(sendPlay(player, request, result));
+                }));
+        return handle;
+    }
+
+    private ClientStreamHandle sendPlay(Player player, StreamPlaybackRequest request, ResolveResult result) {
         AudioTrack track = request.track();
+        AudioSource.Stream stream = request.source();
+        String title = result.title() != null ? result.title() : track.metadata().title();
+        String artist = result.artist() != null ? result.artist() : track.metadata().author();
+        long duration = result.durationMs() > 0 ? result.durationMs() : track.metadata().durationMs();
         Packets.Play play = new Packets.Play(
                 track.id().asString(),
                 stream.source(),
                 stream.id(),
-                url,
+                result.streamUrl().toString(),
                 Map.of(),
                 1,
-                0,
+                result.expiresAt() == null ? 0 : result.expiresAt().toEpochMilli(),
                 request.timing().serverStartTimeMs(),
                 request.timing().positionMs(),
                 request.options().volume(),
                 track.bus().name(),
                 request.options().fadeInMs(),
-                track.metadata().durationMs(),
-                track.metadata().title(),
-                track.metadata().author(),
+                duration,
+                title,
+                artist,
                 null);
         protocol.send(player, Envelope.session(PacketType.PLAY, request.sessionId().toString(),
                 request.timing().revision(), ProtocolCodec.data(play)));
         return new ClientStreamHandle(plugin, protocol, player, request.sessionId());
+    }
+
+    /** 解析失败：优先回退 MoeMusic Legacy；不可用时上报分类错误。 */
+    private void fallback(Player player, StreamPlaybackRequest request,
+                          ResolvingPlaybackHandle handle, Throwable error) {
+        ResolveException resolve = resolveException(error);
+        String kind = resolve == null ? "RESOLVE_FAILED" : resolve.kind().name();
+        String message = resolve == null ? String.valueOf(error.getMessage()) : resolve.getMessage();
+        if (legacy != null && legacy.available(player)) {
+            plugin.getLogger().info("[client] 解析失败（" + kind + "：" + message + "），回退 MoeMusic Legacy");
+            handle.attach(legacy.play(player, request));
+            return;
+        }
+        plugin.getLogger().warning("[client] 解析失败且 Legacy 不可用（" + kind + "）：" + message);
+        protocol.send(player, Envelope.session(PacketType.ERROR, request.sessionId().toString(),
+                request.timing().revision(),
+                ProtocolCodec.data(new Packets.ErrorReport(kind, message))));
+        handle.fail();
+    }
+
+    private static ResolveException resolveException(Throwable error) {
+        if (error instanceof ResolveException resolve) return resolve;
+        if (error != null && error.getCause() instanceof ResolveException resolve) return resolve;
+        return null;
     }
 }

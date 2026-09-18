@@ -20,6 +20,9 @@ import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.region.RegionManager;
 import com.mineaudio.stream.MoeMusicLegacyProvider;
 import com.mineaudio.stream.MoeMusicNowPlaying;
+import com.mineaudio.stream.resolve.DirectUrlResolver;
+import com.mineaudio.stream.resolve.NeteaseEapiResolver;
+import com.mineaudio.stream.resolve.StreamResolverChain;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 import com.mineaudio.ui.AudioUi;
@@ -62,8 +65,10 @@ public final class MineAudioPlugin extends JavaPlugin {
         clientProtocol = new ClientProtocolService(this);
         clientProtocol.register();
         StreamBackend streamBackend = new StreamBackend(this);
-        streamBackend.register(new MineAudioClientProvider(this, clientProtocol));
-        streamBackend.register(new MoeMusicLegacyProvider(this));
+        StreamResolverChain resolvers = createResolvers();
+        MoeMusicLegacyProvider legacyProvider = new MoeMusicLegacyProvider(this);
+        streamBackend.register(new MineAudioClientProvider(this, clientProtocol, resolvers, legacyProvider));
+        streamBackend.register(legacyProvider);
         backends.register(streamBackend);
         if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
             getLogger().info("未检测到 MoeMusic，流媒体 Legacy 路径不可用（安装 MineAudio Client 后不受影响）");
@@ -81,8 +86,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         emitterManager.start();
 
         AudioCommand command = new AudioCommand(this, orchestrator);
-        PluginCommand audio = getCommand("mineaudio");
-        if (audio != null) {
+        PluginCommand audio = getCommand("mineaudio");        if (audio != null) {
             audio.setExecutor(command);
             audio.setTabCompleter(command);
         }
@@ -163,6 +167,25 @@ public final class MineAudioPlugin extends JavaPlugin {
         File file = new File(getDataFolder(), name);
         if (!file.exists()) saveResource(name, false);
         return file;
+    }
+
+    /** 组装 Resolver 链：直链 + 网易 eapi（可选凭证，无凭证匿名尝试）。 */
+    private StreamResolverChain createResolvers() {
+        boolean neteaseEnabled = getConfig().getBoolean("resolvers.netease.enabled", true);
+        String credentialEnv = getConfig().getString("resolvers.netease.credential-env",
+                "MINEAUDIO_NETEASE_MUSIC_U");
+        String level = getConfig().getString("resolvers.netease.level", "exhigh");
+        int timeoutMs = getConfig().getInt("resolvers.netease.timeout-ms", 5000);
+        int maxConcurrent = getConfig().getInt("resolvers.netease.max-concurrent", 4);
+        boolean credentialPresent = credentialEnv != null && !credentialEnv.isBlank()
+                && System.getenv(credentialEnv) != null && !System.getenv(credentialEnv).isBlank();
+        NeteaseEapiResolver netease = new NeteaseEapiResolver(new NeteaseEapiResolver.Config(
+                neteaseEnabled, credentialEnv, level, timeoutMs, maxConcurrent));
+        if (neteaseEnabled) {
+            getLogger().info("网易解析器已启用（凭证：" + (credentialPresent ? "已配置" : "未配置，仅匿名")
+                    + "，音质：" + level + "）");
+        }
+        return new StreamResolverChain(java.util.List.of(new DirectUrlResolver(), netease));
     }
 
     private void warn(String message) {
