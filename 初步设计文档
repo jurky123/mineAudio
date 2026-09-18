@@ -1,0 +1,2610 @@
+# MineAudio
+
+> Paper 26.2 · Minecraft 统一音乐 / 环境音 / 游戏音效基础设施
+
+---
+
+# 1. 项目定位
+
+MineAudio 不是另一个“点歌插件”。
+
+它应该成为整个服务器的：
+
+**Audio Orchestrator / Audio Service**
+
+统一管理：
+
+```text
+                    MineAudio
+                       │
+        ┌──────────────┼───────────────┐
+        ▼              ▼               ▼
+   Resource Pack      NBS          Streaming
+     OGG Sound     NoteBlock       Client Mod
+        │              │               │
+     PackHost     NoteBlockAPI   MoeMusic/Concerto
+```
+
+同时向：
+
+```text
+MineUNO
+MineChess
+MineAgent
+未来其他插件
+```
+
+提供统一 Audio API。
+
+---
+
+# 2. 核心目标
+
+支持三种声音来源：
+
+### A. Resource Pack Audio
+
+```text
+OGG
+↓
+PackHost
+↓
+Resource Pack
+↓
+Minecraft playsound
+```
+
+优点：
+
+* 原版客户端可听
+* 高音质
+* 支持位置声音
+* 非常适合游戏音效、环境音、短音乐
+
+---
+
+### B. Note Block Audio
+
+```text
+NBS
+↓
+NoteBlockAPI
+↓
+Minecraft 原版声音
+```
+
+适合：
+
+* 原版客户端
+* MIDI / NBS 音乐
+* 像素音乐
+* 不想增加大型 OGG 资源包的曲目
+
+NoteBlockAPI 1.7.0 当前明确支持 Minecraft 26.2，并支持 NBS、自定义乐器和扩展音域。
+
+---
+
+### C. Streaming Audio
+
+```text
+网易云
+QQ音乐
+酷狗
+HTTP
+MP3/FLAC/OGG
+       │
+       ▼
+Client Mod
+```
+
+服务端：
+
+**只发送播放控制与歌曲信息，不代理音乐流。**
+
+客户端直接：
+
+```text
+Client
+↓
+网易云 / QQ / CDN
+```
+
+获取音频。
+
+避免服务器承担音乐带宽。
+
+---
+
+# 3. 推荐 Streaming Backend
+
+设计：
+
+```java
+interface StreamingBackend
+```
+
+第一优先：
+
+```text
+MoeMusicBackend
+```
+
+第二优先：
+
+```text
+ConcertoBackend
+```
+
+而不是让 MineAudio 本身实现：
+
+```text
+网易云 API
+QQ API
+音频解码
+播放器
+缓存
+歌词解析
+```
+
+---
+
+# 4. 为什么优先 MoeMusic Adapter
+
+MoeMusic 当前已经将架构拆为：
+
+```text
+:api
+:core
+:client-core
+```
+
+并公开：
+
+* Plugin API
+* MusicSource
+* Playback
+* EventBus
+* Permission Service
+* 自定义音源插件
+* 同步播放逻辑
+
+其 API 还有独立版本兼容约定。
+
+因此 MineAudio 可以正常做：
+
+```text
+MineAudio
+   ↓
+MoeMusic API
+   ↓
+MoeMusic Core
+```
+
+而不是反射或修改 MoeMusic 源码。
+
+---
+
+# 5. Concerto 的定位
+
+Concerto 当前已经支持：
+
+```text
+网易云
+QQ音乐
+酷狗
+HTTP
+本地文件
+
+Music Room
+全服 KTV
+投票切歌
+服务器共享歌单
+```
+
+且有 Paper 26.2 版本。
+
+但是 MineAudio 不应该直接绑定其内部实现。
+
+设计：
+
+```text
+ConcertoAdapter
+```
+
+作为可选集成。
+
+如果以后 Concerto 提供稳定外部 API：
+
+```text
+直接调用 API
+```
+
+否则：
+
+```text
+命令 / 协议桥
+```
+
+处理。
+
+不要复制 Concerto 代码进入 MineAudio。
+
+---
+
+# 6. 总架构
+
+```text
+                        Other Plugins
+
+            MineUNO      MineChess      ...
+               │             │
+               └──────┬──────┘
+                      ▼
+                MineAudio API
+                      │
+                      ▼
+              AudioOrchestrator
+                      │
+        ┌─────────────┼──────────────┐
+        │             │              │
+        ▼             ▼              ▼
+
+   PackBackend     NbsBackend    StreamBackend
+        │             │              │
+        ▼             ▼          ┌───┴─────┐
+    PackHost    NoteBlockAPI      │         │
+                              MoeMusic   Concerto
+```
+
+业务插件永远不关心：
+
+```text
+OGG
+NBS
+MoeMusic
+Concerto
+```
+
+只关心：
+
+```java
+audio.play("mineuno:card.play");
+```
+
+---
+
+# 7. 四种 Audio Bus
+
+整个系统必须先抽象 Bus。
+
+```java
+enum AudioBus {
+    MUSIC,
+    AMBIENT,
+    SFX,
+    UI
+}
+```
+
+这是非常重要的设计。
+
+---
+
+## MUSIC
+
+例如：
+
+```text
+大厅音乐
+主城 BGM
+网易云歌曲
+Chess 对局音乐
+```
+
+原则：
+
+**每个玩家通常最多一个 MUSIC。**
+
+---
+
+## AMBIENT
+
+例如：
+
+```text
+酒馆环境音
+森林风声
+矿洞水滴
+机器轰鸣
+```
+
+允许和 MUSIC 同时播放。
+
+---
+
+## SFX
+
+例如：
+
+```text
+UNO 出牌
+Chess 落子
+胜利
+失败
+开箱
+```
+
+允许大量短暂并行。
+
+---
+
+## UI
+
+例如：
+
+```text
+按钮
+弹窗
+确认
+错误提示
+```
+
+通常只对单个玩家播放。
+
+---
+
+# 8. Track 模型
+
+业务侧统一：
+
+```java
+AudioTrack
+```
+
+例如：
+
+```java
+record AudioTrack(
+    NamespacedKey id,
+    AudioBus bus,
+    AudioSource source,
+    AudioMetadata metadata,
+    PlaybackOptions options
+) {}
+```
+
+---
+
+# 9. AudioSource
+
+```java
+sealed interface AudioSource
+```
+
+实现：
+
+```text
+PackSoundSource
+VanillaSoundSource
+NbsSource
+StreamSource
+```
+
+---
+
+# 10. Resource Pack Track
+
+例如：
+
+```yaml
+tracks:
+
+  lobby:
+    type: PACK
+    sound: mineaudio:music.lobby
+
+    bus: MUSIC
+
+    duration: 182000
+    loop: true
+
+    volume: 0.7
+```
+
+资源：
+
+```text
+assets/mineaudio/
+├── sounds.json
+└── sounds/
+    └── music/
+        └── lobby.ogg
+```
+
+长音乐在 `sounds.json` 中应设置为流式加载。
+
+---
+
+# 11. NBS Track
+
+```yaml
+village_theme:
+
+  type: NBS
+
+  file: village_theme.nbs
+
+  bus: MUSIC
+
+  loop: true
+```
+
+文件：
+
+```text
+plugins/MineAudio/nbs/
+```
+
+---
+
+# 12. Streaming Track
+
+不要把流媒体 URL 当成核心 ID。
+
+例如：
+
+```yaml
+night_song:
+
+  type: STREAM
+
+  provider: moemusic
+
+  source: netease
+
+  id: "123456789"
+
+  bus: MUSIC
+```
+
+或者：
+
+```yaml
+radio:
+
+  type: STREAM
+
+  provider: moemusic
+
+  uri: "https://..."
+```
+
+MineAudio 保存：
+
+```text
+provider
+source
+track reference
+```
+
+而不是歌曲文件。
+
+---
+
+# 13. Playback Scope
+
+统一：
+
+```java
+enum AudioScopeType {
+    PLAYER,
+    GROUP,
+    GLOBAL,
+    WORLD,
+    REGION,
+    EMITTER
+}
+```
+
+---
+
+# 14. PLAYER
+
+例如：
+
+```java
+audio.play(
+    player,
+    "mineuno:uno"
+);
+```
+
+只播放给 Alice。
+
+---
+
+# 15. GLOBAL
+
+```text
+全服务器
+```
+
+例如：
+
+```text
+服务器活动主题曲
+全服 KTV
+```
+
+---
+
+# 16. WORLD
+
+例如：
+
+```text
+world
+→ survival BGM
+
+world_nether
+→ Nether BGM
+```
+
+---
+
+# 17. REGION
+
+核心新功能之一。
+
+例如：
+
+```text
+Spawn
+→ spawn_theme
+
+Tavern
+→ tavern_music
+
+Mine
+→ cave_ambient
+```
+
+---
+
+# 18. Region 模型
+
+```java
+AudioRegion {
+    id
+
+    world
+
+    shape
+
+    priority
+
+    music
+    ambient
+
+    fadeIn
+    fadeOut
+}
+```
+
+V1 支持：
+
+```text
+Cuboid
+Sphere
+```
+
+以后可：
+
+```text
+WorldGuardRegionAdapter
+```
+
+---
+
+# 19. 重叠区域
+
+必须有明确优先级。
+
+例如：
+
+```text
+World BGM
+priority = 0
+
+Spawn
+priority = 10
+
+Tavern
+priority = 20
+```
+
+玩家：
+
+```text
+World
+↓
+Spawn
+↓
+Tavern
+```
+
+最终：
+
+```text
+Tavern music
+```
+
+离开 Tavern：
+
+```text
+Spawn music
+```
+
+离开 Spawn：
+
+```text
+World music
+```
+
+---
+
+# 20. Region Stack
+
+每个玩家维护：
+
+```text
+AudioContext
+
+musicRegionStack
+ambientRegions
+```
+
+MUSIC：
+
+```text
+只取最高 priority
+```
+
+AMBIENT：
+
+```text
+允许多个
+```
+
+但设置最大：
+
+```text
+maxAmbientLayers = 3
+```
+
+避免噪音。
+
+---
+
+# 21. 区域检测
+
+不要：
+
+```text
+每 tick
+players × all regions
+```
+
+全部扫描。
+
+建立：
+
+```text
+Chunk → Region[]
+```
+
+索引。
+
+例如：
+
+```java
+Map<WorldKey,
+    Map<ChunkKey,
+        List<AudioRegion>>>
+```
+
+每：
+
+```text
+10 ticks
+```
+
+检查玩家所在 chunk 附近相关区域。
+
+几十甚至上百区域都很轻。
+
+---
+
+# 22. 边界抖动
+
+玩家站在区域边缘：
+
+```text
+inside
+outside
+inside
+outside
+```
+
+不能不停切歌。
+
+加入：
+
+```text
+enterDelay = 300ms
+exitDelay = 500ms
+```
+
+或者简单 hysteresis。
+
+---
+
+# 23. EMITTER
+
+第二个重要功能：
+
+**声音绑定到世界坐标或方块。**
+
+例如：
+
+```text
+酒馆留声机
+广播塔
+舞厅音箱
+Boss祭坛
+机器
+```
+
+模型：
+
+```java
+AudioEmitter {
+    id
+
+    location
+
+    radius
+
+    track
+
+    trigger
+
+    enabled
+}
+```
+
+---
+
+# 24. Trigger
+
+支持：
+
+```text
+ALWAYS
+REDSTONE
+INTERACT
+COMMAND
+PROXIMITY
+```
+
+例如：
+
+```yaml
+tavern_radio:
+
+  location:
+    world: world
+    x: 120
+    y: 65
+    z: -31
+
+  track: tavern_song
+
+  radius: 24
+
+  trigger: REDSTONE
+```
+
+红石开：
+
+```text
+Play
+```
+
+红石关：
+
+```text
+Stop
+```
+
+---
+
+# 25. 方块绑定不要依赖 Block PDC
+
+不是所有方块都有：
+
+```text
+TileState
+```
+
+因此权威数据存在：
+
+```text
+emitters.yml
+```
+
+映射：
+
+```text
+world + x + y + z
+→
+emitterId
+```
+
+Block PDC 只能作为支持它的方块的辅助数据。
+
+---
+
+# 26. 位置声音
+
+Resource Pack / Vanilla Sound：
+
+最适合做：
+
+```text
+真正的位置音频
+```
+
+例如：
+
+```java
+audio.playAt(
+    location,
+    "mineaudio:tavern.radio"
+);
+```
+
+Minecraft 自己处理衰减。
+
+需要注意：
+
+**真正需要空间衰减的资源包声音应使用 Mono 音频。**
+
+Minecraft 的 `attenuation_distance` 对单声道声音有效。
+
+因此：
+
+```text
+全局 BGM
+→ stereo OGG
+
+3D 环境声
+→ mono OGG
+```
+
+---
+
+# 27. Streaming 与“位置音乐”
+
+这里必须区分：
+
+```text
+区域音乐
+```
+
+和：
+
+```text
+空间位置声音
+```
+
+网易云歌曲：
+
+```text
+进入酒馆
+→ 开始播放
+```
+
+这是：
+
+```text
+REGION
+```
+
+不是：
+
+```text
+真正的 3D position audio
+```
+
+用户走到酒馆另一边不会自动：
+
+```text
+左耳大
+右耳小
+```
+
+除非 MineAudio Client 自己实现空间音频。
+
+V1 不需要。
+
+---
+
+# 28. Backend Capability
+
+这是整个架构很关键的一层。
+
+```java
+record AudioCapabilities(
+    boolean vanillaClient,
+    boolean seek,
+    boolean pause,
+    boolean loop,
+    boolean positional,
+    boolean synchronizedPlayback,
+    boolean multiSession,
+    boolean lyrics
+) {}
+```
+
+---
+
+# 29. Capability 示例
+
+大体可以理解为：
+
+| Backend  | Vanilla | 高音质 | 位置  | Seek  | 同步 | 多区域独立   |
+| -------- | ------- | --- | --- | ----- | -- | ------- |
+| Pack     | ✓       | ✓   | ✓   | ✗     | 有限 | ✓       |
+| NBS      | ✓       | 音符盒 | 可实现 | 视 API | ✓  | ✓       |
+| MoeMusic | ✗       | ✓   | ✗   | ✓     | ✓  | 后端能力决定  |
+| Concerto | ✗       | ✓   | ✗   | ✓     | ✓  | Room 能力 |
+
+MineAudio **不能假设所有 Backend 都有相同能力**。
+
+---
+
+# 30. Stream 区域限制
+
+尤其不要一开始就承诺：
+
+> 任意 20 个区域可以同时播放 20 首网易云歌曲。
+
+部分第三方播放器的服务端模型本质上是：
+
+```text
+一个 Server Playlist
+```
+
+而不是：
+
+```text
+任意玩家独立 Session
+```
+
+所以：
+
+```java
+backend.supports(MULTI_SESSION)
+```
+
+才允许：
+
+```text
+Region A → song A
+Region B → song B
+```
+
+否则流媒体 Backend：
+
+```text
+只允许 GLOBAL
+```
+
+或者：
+
+```text
+一个共享 Room
+```
+
+---
+
+# 31. 播放同步
+
+Track Instance：
+
+```java
+PlaybackSession {
+
+    id;
+
+    track;
+
+    startEpoch;
+
+    scope;
+
+    state;
+}
+```
+
+服务端保存：
+
+```text
+start time
+```
+
+而不是不停广播当前秒数。
+
+---
+
+# 32. Mod Backend 同步
+
+例如：
+
+```text
+startEpoch = 19:30:00.500
+```
+
+客户端收到：
+
+```text
+Track
+startEpoch
+```
+
+自己计算：
+
+```text
+offset =
+currentTime - startEpoch
+```
+
+若支持 Seek：
+
+```text
+seek(offset)
+```
+
+进入区域的玩家因此可以和其他人保持同进度。
+
+---
+
+# 33. Resource Pack 限制
+
+`playsound` 不是一个完整播放器。
+
+对于一个已经播放：
+
+```text
+2 分钟
+```
+
+的 OGG：
+
+晚进入的玩家不能直接：
+
+```text
+seek 到 2:00
+```
+
+因此 PACK 音乐提供：
+
+```text
+SYNC_START
+```
+
+但不保证：
+
+```text
+LATE_JOIN_SEEK
+```
+
+区域 PACK 音乐默认：
+
+```text
+进入区域
+→ 从头播放
+```
+
+这是正常限制。
+
+---
+
+# 34. Audio Arbitration
+
+每玩家维护：
+
+```text
+AudioState
+```
+
+例如：
+
+```text
+MUSIC:
+    tavern_theme
+
+AMBIENT:
+    rain
+    fireplace
+
+SFX:
+    ...
+```
+
+进入区域：
+
+```text
+Global Music
+    ↓
+Region Music
+```
+
+MineAudio：
+
+```text
+停止 / 淡出 global
+↓
+播放 region
+```
+
+离开：
+
+```text
+停止 region
+↓
+恢复 global
+```
+
+---
+
+# 35. Fade
+
+统一 API：
+
+```java
+PlaybackOptions {
+    fadeInMs
+    fadeOutMs
+}
+```
+
+但是：
+
+```text
+Backend best effort
+```
+
+Streaming Backend：
+
+```text
+真正 volume fade
+```
+
+NBS：
+
+```text
+可调 volume
+```
+
+Resource Pack：
+
+```text
+无法真正对已经播放的 playsound 连续调音量
+```
+
+因此退化为：
+
+```text
+stop → new sound
+```
+
+或者：
+
+```text
+无 fade
+```
+
+API 不应撒谎。
+
+---
+
+# 36. Game SFX API
+
+这是 MineAudio 最有价值的部分之一。
+
+MineUNO 不再：
+
+```java
+player.playSound(...)
+```
+
+而是：
+
+```java
+audio.playSfx(
+    player,
+    Key.key("mineuno", "card.play")
+);
+```
+
+你当前 MineUNO 中已经存在直接调用 Bukkit `playSound()` 的情况，因此后续正好可以统一迁移到这里。
+
+---
+
+# 37. MineUNO 示例
+
+定义：
+
+```yaml
+mineuno:card.play:
+
+  source:
+    type: PACK
+    sound: mineuno:card.play
+
+  fallback:
+    type: VANILLA
+    sound: item.book.page_turn
+```
+
+代码：
+
+```java
+audio.playSfx(
+    player,
+    "mineuno:card.play"
+);
+```
+
+---
+
+# 38. MineChess
+
+例如：
+
+```text
+minechess:piece.move
+minechess:piece.capture
+
+minechess:check
+minechess:checkmate
+
+minechess:clock
+minechess:win
+```
+
+棋子：
+
+```text
+e2 → e4
+```
+
+在棋盘位置：
+
+```java
+audio.playSfxAt(
+    board.square("e4"),
+    "minechess:piece.move"
+);
+```
+
+所有附近玩家，包括观众，都能听到落子声音。
+
+这比：
+
+```text
+只给下棋者 playSound
+```
+
+自然很多。
+
+---
+
+# 39. Fallback 系统
+
+极其推荐。
+
+每个 Audio Cue 可以：
+
+```text
+Primary
++
+Fallback
+```
+
+例如：
+
+```yaml
+minechess:move:
+
+  primary:
+    type: PACK
+    sound: minechess:move
+
+  fallback:
+    type: VANILLA
+    sound: block.wood.place
+```
+
+资源包未加载：
+
+```text
+自动 Vanilla
+```
+
+---
+
+# 40. Client Capability
+
+每玩家维护：
+
+```text
+PACK_AVAILABLE
+
+MINEUI_AVAILABLE
+
+MOEMUSIC_AVAILABLE
+
+CONCERTO_AVAILABLE
+```
+
+MineAudio 根据：
+
+```text
+Track
++
+Player capability
+```
+
+选择 Backend。
+
+---
+
+# 41. Streaming Fallback
+
+例如全服播放：
+
+```text
+网易云歌曲
+```
+
+Alice：
+
+```text
+装 MoeMusic
+→ stream
+```
+
+Bob：
+
+```text
+没装
+→ 不播放
+```
+
+如果配置了 Pack fallback：
+
+```text
+→ fallback BGM
+```
+
+不能让没有 Mod 的玩家收到错误。
+
+---
+
+# 42. API 模块
+
+MineAudio 应该拆：
+
+```text
+mineaudio-api
+mineaudio-paper
+```
+
+其他插件：
+
+```gradle
+compileOnly(project(":mineaudio-api"))
+```
+
+运行：
+
+```yaml
+softdepend:
+  - MineAudio
+```
+
+---
+
+# 43. 核心 API
+
+推荐：
+
+```java
+public interface MineAudio {
+
+    PlaybackHandle play(
+        Audience audience,
+        Key track
+    );
+
+    PlaybackHandle play(
+        Audience audience,
+        Key track,
+        PlaybackOptions options
+    );
+
+    void stop(
+        Audience audience,
+        AudioBus bus
+    );
+
+    void playSfx(
+        Player player,
+        Key cue
+    );
+
+    void playSfxAt(
+        Location location,
+        Key cue
+    );
+}
+```
+
+---
+
+# 44. Audience
+
+不要只接受：
+
+```java
+Player
+```
+
+抽象：
+
+```text
+PlayerAudience
+PlayersAudience
+WorldAudience
+GlobalAudience
+RegionAudience
+```
+
+这样 API 不会越来越多重载。
+
+---
+
+# 45. PlaybackHandle
+
+```java
+interface PlaybackHandle {
+
+    UUID id();
+
+    PlaybackState state();
+
+    void stop();
+
+    void pause();
+
+    void resume();
+}
+```
+
+不支持：
+
+```text
+pause
+```
+
+的 Backend：
+
+返回：
+
+```text
+UNSUPPORTED
+```
+
+或 capability 预检查。
+
+---
+
+# 46. Audio Cue 与 Track 分离
+
+建议区分：
+
+```text
+Track
+```
+
+和：
+
+```text
+Cue
+```
+
+Track：
+
+```text
+完整音乐
+```
+
+Cue：
+
+```text
+语义事件
+```
+
+例如：
+
+```text
+mineuno:card.play
+```
+
+是 Cue。
+
+它可以解析为：
+
+```text
+custom pack sound
+```
+
+也可以 fallback：
+
+```text
+vanilla sound
+```
+
+这样业务插件不需要知道声音素材以后换没换。
+
+---
+
+# 47. 事件 API
+
+提供：
+
+```text
+AudioPlayEvent
+
+AudioStopEvent
+
+AudioRegionEnterEvent
+AudioRegionLeaveEvent
+
+AudioEmitterStartEvent
+
+TrackStartedEvent
+TrackFinishedEvent
+```
+
+以后 MineAgent 甚至可以：
+
+```text
+监听现在播放什么
+```
+
+或控制音乐。
+
+---
+
+# 48. Skript Bridge
+
+建议提供：
+
+```text
+play audio "mineaudio:lobby"
+```
+
+以及：
+
+```text
+play sfx "mineuno:card.play" to player
+
+stop music for player
+```
+
+但 Skript Adapter 单独 package：
+
+```text
+integration.skript
+```
+
+不要让核心依赖 Skript。
+
+---
+
+# 49. PackHost 应该顺手独立
+
+你当前 PackHost 已经是真正意义上的：
+
+```text
+通用资源包基础设施
+```
+
+代码也已经能够：
+
+```text
+合并多个 ZIP
+合并 loose files
+生成 hash
+HTTP 托管
+ResourcePackRequest 下发
+```
+
+所以建议从：
+
+```text
+mineUNO/packhost
+```
+
+抽出：
+
+```text
+jurky123/PackHost
+```
+
+成为独立仓库。
+
+---
+
+# 50. PackHost API
+
+顺便增加：
+
+```java
+PackHostApi
+```
+
+例如：
+
+```java
+packHost.registerPack(
+    plugin,
+    Path.of("mineaudio.zip")
+);
+```
+
+然后：
+
+```text
+PackHost
+↓
+自动 merge
+↓
+统一服务器 resource pack
+```
+
+MineAudio 不应该自己：
+
+```text
+再次开 :8124
+```
+
+一个服务器只需要一个 PackHost。
+
+---
+
+# 51. Resource Pack Ownership
+
+建议每个插件：
+
+```text
+MineUNO
+MineChess
+MineAudio
+```
+
+都生成独立 zip：
+
+```text
+mineuno.zip
+minechess.zip
+mineaudio.zip
+```
+
+PackHost：
+
+```text
+merge
+↓
+pack.zip
+```
+
+避免插件之间互相复制资源。
+
+---
+
+# 52. MineAudio 项目目录
+
+推荐：
+
+```text
+mineAudio/
+
+├── mineaudio-api/
+│
+├── mineaudio-paper/
+│
+├── mineaudio-adapter-moemusic/
+│
+├── mineaudio-adapter-concerto/
+│
+├── pack/
+│
+├── nbs/
+│
+└── docs/
+```
+
+第一版甚至可以：
+
+```text
+api
+paper
+```
+
+两个 module。
+
+Adapter 后做。
+
+---
+
+# 53. Paper 内部结构
+
+```text
+com.mineaudio
+
+├── api/
+│
+├── track/
+│   ├── TrackRegistry
+│   ├── AudioTrack
+│   └── AudioCue
+│
+├── playback/
+│   ├── AudioOrchestrator
+│   ├── PlaybackSession
+│   └── PlayerAudioState
+│
+├── backend/
+│   ├── AudioBackend
+│   ├── PackBackend
+│   ├── VanillaBackend
+│   ├── NbsBackend
+│   └── StreamingBackend
+│
+├── region/
+│   ├── AudioRegion
+│   ├── RegionManager
+│   └── SpatialIndex
+│
+├── emitter/
+│   ├── AudioEmitter
+│   └── EmitterManager
+│
+├── integration/
+│   ├── PackHostIntegration
+│   ├── NoteBlockIntegration
+│   ├── MoeMusicIntegration
+│   └── ConcertoIntegration
+│
+└── command/
+```
+
+---
+
+# 54. 配置文件
+
+建议：
+
+```text
+config.yml
+
+tracks.yml
+cues.yml
+
+regions.yml
+emitters.yml
+```
+
+不要全部塞一个 config。
+
+---
+
+# 55. tracks.yml
+
+```yaml
+tracks:
+
+  spawn:
+    type: PACK
+    bus: MUSIC
+
+    sound: mineaudio:music.spawn
+    duration: 180000
+    loop: true
+
+
+  tavern:
+    type: NBS
+    bus: MUSIC
+
+    file: tavern.nbs
+    loop: true
+
+
+  night_radio:
+    type: STREAM
+    bus: MUSIC
+
+    backend: moemusic
+    source: netease
+    id: "123456"
+```
+
+---
+
+# 56. regions.yml
+
+```yaml
+regions:
+
+  spawn:
+
+    world: world
+
+    shape:
+      type: CUBOID
+
+      min:
+        x: -50
+        y: 0
+        z: -50
+
+      max:
+        x: 50
+        y: 255
+        z: 50
+
+    priority: 10
+
+    music: spawn
+```
+
+---
+
+# 57. emitters.yml
+
+```yaml
+emitters:
+
+  tavern_radio:
+
+    world: world
+
+    x: 135
+    y: 65
+    z: -21
+
+    track: tavern
+
+    radius: 24
+
+    trigger: REDSTONE
+```
+
+---
+
+# 58. 命令
+
+避免直接使用：
+
+```text
+/music
+```
+
+因为 MoeMusic / Concerto 都会使用这个命名空间。
+
+MineAudio 使用：
+
+```text
+/audio
+```
+
+或：
+
+```text
+/mineaudio
+```
+
+推荐：
+
+```text
+/audio
+```
+
+管理员：
+
+```text
+/audio play <track>
+
+/audio play <track> global
+/audio play <track> player <player>
+
+/audio stop
+
+/audio region create <id>
+/audio region settrack <id> <track>
+/audio region delete <id>
+
+/audio emitter create <id>
+/audio emitter bind <id>
+/audio emitter settrack <id> <track>
+
+/audio reload
+/audio debug
+```
+
+---
+
+# 59. Debug
+
+强烈建议：
+
+```text
+/audio debug
+```
+
+显示：
+
+```text
+MineAudio Debug
+
+Player: Alice
+
+Music:
+  tavern_theme
+
+Backend:
+  PACK
+
+Regions:
+  world
+  spawn
+  tavern
+
+Selected:
+  tavern (priority 20)
+
+Ambient:
+  fireplace
+  rain
+
+Pack:
+  LOADED
+
+MoeMusic:
+  AVAILABLE
+```
+
+定位区域问题会非常方便。
+
+---
+
+# 60. MineUI
+
+你的 MineUI 当前已经支持：
+
+```text
+Grid
+Scroll
+Input
+Slider
+动态图片
+业务插件下发 UI JSON
+```
+
+并且业务 API 已投入 MineSkin/MineChess 使用。
+
+因此音乐 UI 不需要另造。
+
+---
+
+# 61. MineAudio UI
+
+未来：
+
+```text
+/audio ui
+```
+
+打开：
+
+```text
+┌─────────────────────────────────────────┐
+│                MineAudio                │
+├─────────────────────────────────────────┤
+│                                         │
+│       [ Cover ]      稻香               │
+│                      周杰伦             │
+│                                         │
+│      ───────●────────────               │
+│      01:32        03:43                 │
+│                                         │
+│        ◀       ▶/❚❚       ▶             │
+│                                         │
+│ Volume  ━━━━━━━━━●━━                    │
+│                                         │
+├─────────────────────────────────────────┤
+│ Search                                  │
+│ [...........................]            │
+│                                         │
+│ Queue                                   │
+│ 1. ...                                  │
+│ 2. ...                                  │
+└─────────────────────────────────────────┘
+```
+
+---
+
+# 62. HUD
+
+MineUI 当前 HUD Overlay 仍属于计划项，因此不要让 MineAudio V1 依赖 HUD。
+
+顺序：
+
+```text
+V1 Chat / Command
+
+↓
+
+V2 MineUI Player Screen
+
+↓
+
+MineUI HUD 完成后
+↓
+
+Music HUD
+```
+
+HUD：
+
+```text
+♫ 稻香 — 周杰伦
+━━━━━━━━━━●━━━━
+1:32 / 3:43
+```
+
+---
+
+# 63. Streaming 安全
+
+流媒体必须考虑：
+
+```text
+客户端 IP
+```
+
+直接请求第三方资源会把玩家 IP 暴露给目标媒体服务器。
+
+MoeMusic 已经实现：
+
+```text
+Media Firewall
+白名单 / 黑名单
+```
+
+用于验证服务端发送给客户端的媒体链接。
+
+MineAudio 的 Stream Adapter 必须尊重该安全层。
+
+不要：
+
+```text
+MineAudio
+→ 任意用户 URL
+→ 客户端自动连接
+```
+
+---
+
+# 64. URL 音源策略
+
+默认：
+
+```text
+HTTP URL disabled
+```
+
+管理员可配置：
+
+```yaml
+stream:
+
+  allowed-hosts:
+    - music.163.com
+    - qq.com
+    - trusted-cdn.example.com
+```
+
+或者完全交给 MoeMusic Media Firewall。
+
+---
+
+# 65. 不建议服务器代理歌曲
+
+不要：
+
+```text
+网易云
+↓
+Minecraft Server
+↓
+所有玩家
+```
+
+否则 8 个玩家听：
+
+```text
+320 kbps × 8
+```
+
+服务器持续消耗网络带宽。
+
+正确：
+
+```text
+                 ┌→ Alice
+Music Provider ──┼→ Bob
+                 ├→ Carol
+                 └→ Dave
+```
+
+MineAudio 只负责：
+
+```text
+播放控制
+时间同步
+Track ID
+```
+
+---
+
+# 66. 版权与缓存
+
+MineAudio 不应该：
+
+```text
+自动下载网易云歌曲
+↓
+PackHost
+↓
+重新分发
+```
+
+Streaming Track 保留：
+
+```text
+provider ID / reference
+```
+
+即可。
+
+你自己拥有版权或有授权的自定义音乐：
+
+```text
+OGG
+↓
+PackHost
+```
+
+处理。
+
+---
+
+# 67. Backend 故障隔离
+
+如果：
+
+```text
+MoeMusic
+```
+
+没安装：
+
+```text
+MoeMusicBackend = unavailable
+```
+
+不能导致：
+
+```text
+MineAudio disable
+```
+
+同理：
+
+```text
+NoteBlockAPI missing
+```
+
+只是：
+
+```text
+NBS unavailable
+```
+
+PACK / Vanilla 仍正常。
+
+---
+
+# 68. plugin.yml
+
+建议：
+
+```yaml
+softdepend:
+  - PackHost
+  - NoteBlockAPI
+  - MoeMusic
+  - Concerto
+  - MineUI
+```
+
+真正必须的：
+
+```text
+Paper
+```
+
+只有这个。
+
+---
+
+# 69. Phase 1
+
+先完成真正的核心：
+
+```text
+TrackRegistry
+
+PACK
+Vanilla
+NBS
+
+Global
+World
+Player
+Region
+Emitter
+
+Audio Bus
+
+Cue API
+
+MineUNO / Chess API
+```
+
+不做流媒体。
+
+这已经解决你服务器大部分声音需求。
+
+---
+
+# 70. Phase 2
+
+完成：
+
+```text
+MoeMusic Adapter
+
+Stream Track
+
+Global streaming
+
+同步进度
+
+客户端 capability
+```
+
+原因是 MoeMusic 当前有正式的公开 Plugin API，最适合第一个接。
+
+---
+
+# 71. Phase 2.5
+
+研究：
+
+```text
+Concerto Adapter
+```
+
+如果其可公开调用的接口足够稳定：
+
+```text
+直接 API
+```
+
+否则保持为：
+
+```text
+optional external integration
+```
+
+绝对不要让 MineAudio Core 依赖 Concerto 实现细节。
+
+---
+
+# 72. Phase 3
+
+接：
+
+```text
+MineUI
+```
+
+实现：
+
+```text
+正在播放
+搜索
+点歌
+队列
+音量
+歌词
+```
+
+---
+
+# 73. Phase 4
+
+完成：
+
+```text
+高级 Region
+
+WorldGuard Adapter
+
+Jukebox / Speaker Block
+
+Redstone automation
+
+播放列表
+Shuffle
+
+时间条件
+天气条件
+```
+
+例如：
+
+```yaml
+spawn_night:
+
+  region: spawn
+
+  condition:
+    time: night
+
+  track: night_theme
+```
+
+---
+
+# 74. Phase 5
+
+如果以后确实有需求：
+
+开发：
+
+```text
+MineAudio Client
+```
+
+并入你的 Fabric 客户端生态。
+
+这时可以真正实现：
+
+```text
+任意 per-player stream
+多区域同时 streaming
+3D streamed audio
+crossfade
+DSP
+EQ
+```
+
+在此之前没必要重新造播放器。
+
+---
+
+# 75. 推荐同时改造 PackHost
+
+MineAudio 开始前建议先做一个非常小的架构调整：
+
+```text
+mineUNO/packhost
+
+↓
+
+独立仓库：
+
+PackHost
+```
+
+然后你的仓库变成：
+
+```text
+minePlugins/
+
+├── mineAgent
+├── mineAudio
+├── mineChess
+├── mineSkin
+├── mineUI
+├── mineUNO
+└── packHost
+```
+
+PackHost 变成所有插件统一的：
+
+```text
+Resource Infrastructure
+```
+
+而不是 UNO 附属功能。
+
+---
+
+# 76. 最终关系
+
+最终整个插件生态：
+
+```text
+                     PackHost
+                        ▲
+                        │
+                  Resource Packs
+                        │
+                    MineAudio
+              ┌─────────┼─────────┐
+              │         │         │
+              ▼         ▼         ▼
+          PACK Audio    NBS     Streaming
+                         │          │
+                  NoteBlockAPI   MoeMusic
+                                  Concerto
+                        │
+                        │
+              ┌─────────┼─────────┐
+              ▼         ▼         ▼
+           MineUNO   MineChess   Other
+                        │
+                        ▼
+                     MineUI
+```
+
+职责非常明确：
+
+```text
+PackHost
+= 资源包
+
+MineUI
+= 界面
+
+MineAudio
+= 声音调度
+
+MoeMusic / Concerto
+= 流媒体播放器
+
+NoteBlockAPI
+= NBS 播放
+
+MineUNO / MineChess
+= 游戏业务
+```
+
+---
+
+# 77. V1 验收标准
+
+V1 达到以下即可停止继续造框架：
+
+```text
+✓ Resource Pack OGG
+
+✓ Vanilla Sound
+
+✓ NBS
+
+✓ Player Scope
+✓ Global Scope
+✓ World Scope
+✓ Region Scope
+✓ Emitter Scope
+
+✓ Cuboid / Sphere Region
+
+✓ Position Sound
+
+✓ Redstone Emitter
+
+✓ MUSIC / AMBIENT / SFX / UI Bus
+
+✓ Region Priority
+
+✓ Track / Cue Registry
+
+✓ Java API
+
+✓ MineUNO 接入
+
+✓ MineChess 接入
+
+✓ PackHost 接入
+
+✓ Backend capability / fallback
+
+✓ /audio debug
+```
+
+然后再做流媒体。
+
+---
+
+# 78. 核心原则
+
+MineAudio 最重要的原则是：
+
+> **统一“什么时候、给谁、在哪里、播放什么”，而不是自己负责“如何解码所有音乐”。**
+
+MineAudio：
+
+```text
+WHEN
+WHO
+WHERE
+WHAT
+```
+
+Backend：
+
+```text
+HOW
+```
+
+因此：
+
+```text
+MineAudio
+```
+
+不会随着：
+
+```text
+网易云 API 改版
+QQ 音乐 API 改版
+MoeMusic 更新
+Concerto 更新
+NoteBlockAPI 更新
+```
+
+而大规模重构。
+
+这才是适合作为你整个插件生态公共基础设施的架构。

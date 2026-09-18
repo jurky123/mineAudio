@@ -1,0 +1,22 @@
+# 构建产物
+build/
+out/
+target/
+.gradle/
+*.class
+
+# 资源包产物（源目录 pack/ 保留，生成的 zip 不提交）
+pack/out/
+*.zip
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 系统
+.DS_Store
+
+# 本地运行/日志
+run/
+logs/
