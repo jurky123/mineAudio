@@ -43,7 +43,14 @@ public final class LavaPlayerDecoder implements AudioDecoder {
         DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
         manager.getConfiguration().setOutputFormat(FORMAT);
         manager.getConfiguration().setResamplingQuality(AudioConfiguration.ResamplingQuality.HIGH);
-        manager.registerSourceManager(new HttpAudioSourceManager());
+        HttpAudioSourceManager http = new HttpAudioSourceManager();
+        // 播放地址是本机网关，首次请求需等上游拉流，放宽超时避免误判
+        http.configureRequests(config -> org.apache.http.client.config.RequestConfig.copy(config)
+                .setConnectTimeout(30000)
+                .setSocketTimeout(60000)
+                .setConnectionRequestTimeout(30000)
+                .build());
+        manager.registerSourceManager(http);
         return manager;
     }
 
