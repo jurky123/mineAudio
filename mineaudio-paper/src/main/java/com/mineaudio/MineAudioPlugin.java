@@ -3,6 +3,7 @@ package com.mineaudio;
 import java.io.File;
 
 import com.mineaudio.backend.BackendRegistry;
+import com.mineaudio.backend.NbsBackend;
 import com.mineaudio.backend.SoundBackend;
 import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
@@ -24,6 +25,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final TrackRegistry trackRegistry = new TrackRegistry();
     private final CueRegistry cueRegistry = new CueRegistry();
     private final BackendRegistry backends = new BackendRegistry();
+    private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
 
     @Override
@@ -32,6 +34,12 @@ public final class MineAudioPlugin extends JavaPlugin {
         reloadAudio();
 
         backends.register(new SoundBackend(this));
+        if (Bukkit.getPluginManager().getPlugin("NoteBlockAPI") != null) {
+            nbsBackend = new NbsBackend(this);
+            backends.register(nbsBackend);
+        } else {
+            getLogger().info("未检测到 NoteBlockAPI，NBS Backend 不可用（PACK / Vanilla 不受影响）");
+        }
         PlayerPackStatus packStatus = new PlayerPackStatus(this);
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends, packStatus);
         MineAudioProvider.register(orchestrator);
@@ -57,11 +65,14 @@ public final class MineAudioPlugin extends JavaPlugin {
         getLogger().info("MineAudio 已停用");
     }
 
-    /** 重载 config.yml / tracks.yml / cues.yml。 */
+    /** 重载 config.yml / tracks.yml / cues.yml 与 NBS 曲目。 */
     public void reloadAudio() {
         reloadConfig();
         loadTracks();
         loadCues();
+        if (nbsBackend != null) {
+            nbsBackend.reload();
+        }
     }
 
     private void loadTracks() {

@@ -26,6 +26,10 @@ public final class BackendRegistry {
                 .findFirst();
     }
 
+    public Optional<AudioBackend> byId(String id) {
+        return backends.stream().filter(backend -> backend.id().equals(id)).findFirst();
+    }
+
     public boolean canPlay(AudioSource source) {
         return find(source).isPresent();
     }

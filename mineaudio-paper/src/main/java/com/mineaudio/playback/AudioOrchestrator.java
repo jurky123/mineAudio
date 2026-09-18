@@ -324,6 +324,12 @@ public final class AudioOrchestrator implements MineAudio {
     private void scheduleFinish(Player player, ActiveSession session, PlaybackSession playback) {
         if (playback.options().loop()) return;
         long duration = playback.track().metadata().durationMs();
+        if (duration <= 0) {
+            AudioBackend backend = backends.byId(playback.backend()).orElse(null);
+            if (backend != null) {
+                duration = backend.durationMs(playback.track(), playback.source());
+            }
+        }
         if (duration <= 0) return;
         long ticks = Math.max(1, duration / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {

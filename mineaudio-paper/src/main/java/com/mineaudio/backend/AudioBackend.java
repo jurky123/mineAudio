@@ -25,4 +25,9 @@ public interface AudioBackend {
 
     /** 在位置播放，附近玩家按距离衰减可听。 */
     PlaybackHandle playAt(Location location, AudioTrack track, AudioSource source, PlaybackOptions options);
+
+    /** 该 Backend 已知的实际曲目时长（毫秒），未知返回 -1；Orchestrator 用于安排结束事件。 */
+    default long durationMs(AudioTrack track, AudioSource source) {
+        return -1;
+    }
 }

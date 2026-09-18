@@ -16,6 +16,10 @@ max-ambient-layers: 3
 # 红石 Emitter 轮询间隔（tick）
 emitter-poll-interval-ticks: 5
 
+nbs:
+  # PositionSongPlayer 的可听距离（方块）；V1 的 Emitter radius 暂用该默认值
+  position-distance: 32
+
 pack:
   # 无 PackHost / 未跟踪到资源包状态时，默认视为已加载；
   # 收到玩家资源包加载失败事件后自动按未加载处理（走 fallback）
