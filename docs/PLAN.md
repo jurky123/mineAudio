@@ -307,6 +307,10 @@ emitters:
 - 命令统一为 `/mineaudio`（与 /mineui、/mineskin 等风格一致），不再使用 `/audio`
 - 计分板：注册 PlaceholderAPI 扩展（`%mineaudio:nowplaying%` / `title` / `artist` / `playing` / `stream`），
   本服 TAB 侧边栏已用它替换原 TPS 与两行指令；MoeMusic 自带界面（M 键）无法并入 MineUI 页面
+- MoeMusic 不对外暴露播放状态：用带捕获的 CommandSender 执行 `/music queue` 并解析输出作为
+  best-effort 补充（`MoeMusicNowPlaying`），MineAudio 未发起的播放也能显示；格式变化时退化为“未在播放”
+- MoeMusic 的左上角旋转唱片 HUD 是客户端本地渲染，服务端无法移动/缩放；玩家可在
+  M → 设置或 `[client.now_playing_hud]` 中调小/移位/关闭（安装说明已写明）
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 

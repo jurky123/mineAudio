@@ -24,6 +24,7 @@ import com.mineaudio.api.Audience;
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackState;
 import com.mineaudio.playback.PlaybackSession;
+import com.mineaudio.stream.MoeMusicNowPlaying;
 import com.mineaudio.ui.AudioUi;
 import com.mineui.api.MineUi;
 import com.mineui.api.MineUiProvider;
@@ -148,11 +149,20 @@ public final class MineUiIntegration implements AudioUi {
     private void push(Player player, MineUiSession session) {
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         if (music == null) {
-            session.state("title", "暂无音乐");
-            session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
-            session.state("state", "IDLE");
-            session.state("backend", "-");
-            session.state("origin", "-");
+            MoeMusicNowPlaying.NowPlaying moe = plugin.moeMusicNowPlaying().query().orElse(null);
+            if (moe != null) {
+                session.state("title", moe.title());
+                session.state("subtitle", moe.artist().isBlank() ? "MoeMusic" : moe.artist());
+                session.state("state", "PLAYING");
+                session.state("backend", "moemusic");
+                session.state("origin", "GLOBAL");
+            } else {
+                session.state("title", "暂无音乐");
+                session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
+                session.state("state", "IDLE");
+                session.state("backend", "-");
+                session.state("origin", "-");
+            }
         } else {
             AudioTrack track = music.track();
             session.state("title", track.metadata().title().isBlank()

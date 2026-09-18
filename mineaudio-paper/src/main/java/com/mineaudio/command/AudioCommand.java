@@ -528,6 +528,10 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(Component.text("  [" + player.getName() + "] " + line, NamedTextColor.GRAY));
             }
         }
+        String moeNow = plugin.moeMusicNowPlaying().query()
+                .map(now -> now.artist().isBlank() ? now.title() : now.title() + " - " + now.artist())
+                .orElse("无");
+        sender.sendMessage(Component.text("  MoeMusic 正在播放：" + moeNow, NamedTextColor.GRAY));
         if (sender instanceof Player player) {
             AudioCapabilities capabilities = orchestrator.capabilities(player);
             sender.sendMessage(Component.text("  能力：vanillaClient=" + capabilities.vanillaClient()

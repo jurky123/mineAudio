@@ -105,9 +105,14 @@ Linux:   ~/.minecraft/mods
 4) /audio debug 里 "流媒体客户端：已连接" 即 MineAudio 已识别你的 MoeMusic
 
 排查：
-- /audio ui 提示需要 MineUI 客户端：确认 mineui-client jar 已放入 mods
+- /mineaudio ui 提示需要 MineUI 客户端：确认 mineui-client jar 已放入 mods
 - 流媒体歌曲听不到：确认 MoeMusic 与前置都已放入，且歌曲本身可播放（部分 VIP 曲目需要登录）
 - 崩溃/进不去：把 .minecraft/logs/latest.log 发给管理员
+
+提示：播放时左上角的旋转唱片卡片是 MoeMusic 本地 HUD，可自行调整：
+- 游戏内按 M → 设置：anchor（屏幕四角）、vertical_size（调小）、show_cover / spin_cover、enabled（关闭）
+- 或编辑 .minecraft/config/moemusic/moemusic.toml 的 [client.now_playing_hud]
+- 服务器计分板会显示正在播放，不需要卡片时可把 HUD 关掉
 EOF
 
 KIT_ZIP="$OUT_DIR/mineaudio-client-kit.zip"

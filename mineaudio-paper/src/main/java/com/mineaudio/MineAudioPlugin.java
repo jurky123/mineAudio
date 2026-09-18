@@ -16,6 +16,7 @@ import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.region.RegionManager;
+import com.mineaudio.stream.MoeMusicNowPlaying;
 import com.mineaudio.stream.MoeMusicProvider;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
@@ -36,6 +37,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private final BackendRegistry backends = new BackendRegistry();
     private final RegionManager regionManager = new RegionManager(this);
     private final EmitterManager emitterManager = new EmitterManager(this);
+    private final MoeMusicNowPlaying moeMusicNowPlaying = new MoeMusicNowPlaying(this);
     private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
     private AudioUi audioUi = new NoopAudioUi();
@@ -180,6 +182,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public AudioUi audioUi() {
         return audioUi;
+    }
+
+    public MoeMusicNowPlaying moeMusicNowPlaying() {
+        return moeMusicNowPlaying;
     }
 
     public boolean debug() {

@@ -213,6 +213,22 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 - 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`
 - 后续（Phase 3 剩余）：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
 
+### MoeMusic 客户端 HUD（左上角旋转唱片卡片）
+
+那张卡片是 MoeMusic **客户端 mod 本地渲染**的 HUD，服务端（包括 MineAudio）无法把它移进计分板或从服务端缩放；玩家可以自行调整：
+
+- 游戏内按 `M` → 设置：`anchor`（屏幕四角）、`vertical_size`（大小）、`show_cover` / `spin_cover`（唱片与旋转）、`enabled`（关闭）
+- 或编辑 `.minecraft/config/moemusic/moemusic.toml` 的 `[client.now_playing_hud]`：
+  ```toml
+  enabled = true
+  anchor = "TOP_RIGHT"
+  vertical_size = 32
+  show_cover = false
+  ```
+- 只想看计分板的话，把 `enabled = false` 关掉 HUD 即可
+
+计分板的 `%mineaudio:nowplaying%`：优先显示 MineAudio 自己发起的播放；如果是通过 MoeMusic 界面/命令点歌，MineAudio 会解析 `/music queue` 输出尽力获取当前曲目（best effort，MoeMusic 改输出格式时可能失效，此时退化为 `未在播放`）。
+
 ### 计分板占位符（PlaceholderAPI）
 
 MineAudio 注册 `mineaudio` 扩展（需服务器安装 PlaceholderAPI），可在 TAB 等计分板配置中使用：
