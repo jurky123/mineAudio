@@ -5,6 +5,9 @@
 >
 > 实现状态（2026-09-18）：M0–M6 已完成并推送；M7 文档完成；Phase 2（MoeMusic 流媒体命令桥）已实现并部署；
 > Phase 3 界面部分（MineUI 音乐界面）已实现，客户端安装包见 tools/build_client_kit.sh。
+> MineAudio Client（自研流媒体客户端，26.2）按 docs/DESIGN_MINEAUDIO_MOD.md 推进：
+> Phase 0 服务端重构、Phase 1 协议/握手/状态缓存、Phase 2a 安全媒体基础、Phase 2b 本机媒体网关 已完成并推送；
+> Phase 2c（LavaPlayer 解码 + OpenAL 输出 + 会话接线）进行中。
 
 ## 1. V1 范围
 
