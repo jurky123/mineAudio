@@ -30,15 +30,16 @@ public class MineAudioFabricClient implements ClientModInitializer {
                 context.client().execute(() -> ProtocolClient.get().handle(payload.data())));
 
         ProtocolClient.get().setListener(AUDIO);
-        if (AUDIO.available()) {
-            ProtocolClient.get().setCapabilities(ClientAudioManager.CAPABILITIES);
-            ProtocolClient.get().setFormats(ClientAudioManager.FORMATS);
-        }
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
-                ProtocolClient.get().onJoin(
-                        bytes -> ClientPlayNetworking.send(new MineAudioPayload(bytes)),
-                        version(), MINECRAFT_VERSION, locale()));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            if (AUDIO.available()) {
+                ProtocolClient.get().setCapabilities(ClientAudioManager.CAPABILITIES);
+                ProtocolClient.get().setFormats(ClientAudioManager.FORMATS);
+            }
+            ProtocolClient.get().onJoin(
+                    bytes -> ClientPlayNetworking.send(new MineAudioPayload(bytes)),
+                    version(), MINECRAFT_VERSION, locale());
+        });
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             AUDIO.closeAll();

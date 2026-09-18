@@ -36,28 +36,31 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private ChannelAccess channelAccess;
-    private boolean channelAccessResolved;
-    private boolean available;
+    private volatile boolean available;
 
     /** 声音引擎通道是否可用（反射失败时禁用流媒体能力，退回服务端 fallback）。 */
     public boolean available() {
-        resolveChannelAccess();
+        if (!available) {
+            resolveChannelAccess();
+        }
         return available;
     }
 
     private synchronized void resolveChannelAccess() {
-        if (channelAccessResolved) return;
-        channelAccessResolved = true;
+        if (available) return;
         try {
             SoundManager manager = Minecraft.getInstance().getSoundManager();
+            if (manager == null) return;
             Field engineField = SoundManager.class.getDeclaredField("soundEngine");
             engineField.setAccessible(true);
             SoundEngine engine = (SoundEngine) engineField.get(manager);
+            if (engine == null) return;
             Field accessField = SoundEngine.class.getDeclaredField("channelAccess");
             accessField.setAccessible(true);
             channelAccess = (ChannelAccess) accessField.get(engine);
             available = channelAccess != null;
         } catch (Throwable t) {
+            channelAccess = null;
             available = false;
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
                     "无法接入 Minecraft 音频通道，流媒体播放不可用：{}", t.toString());
