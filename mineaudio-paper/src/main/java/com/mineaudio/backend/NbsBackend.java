@@ -30,7 +30,8 @@ import com.xxmicloxx.NoteBlockAPI.utils.NBSDecoder;
 public final class NbsBackend implements AudioBackend {
 
     private static final AudioCapabilities CAPABILITIES =
-            new AudioCapabilities(true, true, true, true, true, true, true, false);
+            new AudioCapabilities(true, true, true, true, false, true,
+                    true, true, true, true, false, false);
 
     private final MineAudioPlugin plugin;
     private final Map<String, Song> songs = new HashMap<>();

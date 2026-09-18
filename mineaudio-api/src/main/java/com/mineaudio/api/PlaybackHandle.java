@@ -20,4 +20,9 @@ public interface PlaybackHandle {
     boolean resume();
 
     boolean seek(Duration position);
+
+    /** 运行时音量（0~1），Backend 不支持时返回 false。 */
+    default boolean setVolume(float volume) {
+        return false;
+    }
 }

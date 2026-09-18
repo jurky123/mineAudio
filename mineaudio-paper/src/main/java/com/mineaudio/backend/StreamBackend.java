@@ -1,6 +1,5 @@
 package com.mineaudio.backend;
 
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,25 +8,28 @@ import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
+import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.AudioCapabilities;
 import com.mineaudio.api.AudioSource;
 import com.mineaudio.api.AudioTrack;
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackOptions;
-import com.mineaudio.api.PlaybackState;
 import com.mineaudio.playback.NoopPlaybackHandle;
+import com.mineaudio.stream.StreamPlaybackRequest;
 import com.mineaudio.stream.StreamProvider;
 
-import net.kyori.adventure.key.Key;
-
 /**
- * 流媒体 Backend：委托 StreamProvider（V1 为 MoeMusic 命令桥）。
- * 服务端队列为全服共享，因此按曲目去重，同一曲目的多个玩家会话复用同一个句柄。
+ * 流媒体 Backend：按玩家能力与配置优先级选择 StreamProvider。
+ * 每个玩家一次播放 = 一个独立 session/handle（不再按 trackId 全服复用）。
  */
 public final class StreamBackend implements AudioBackend {
 
+    private final MineAudioPlugin plugin;
     private final Map<String, StreamProvider> providers = new LinkedHashMap<>();
-    private final Map<Key, StreamHandle> active = new LinkedHashMap<>();
+
+    public StreamBackend(MineAudioPlugin plugin) {
+        this.plugin = plugin;
+    }
 
     public void register(StreamProvider provider) {
         providers.put(provider.id(), provider);
@@ -40,50 +42,57 @@ public final class StreamBackend implements AudioBackend {
 
     @Override
     public boolean supports(AudioSource source) {
-        return source instanceof AudioSource.Stream stream && providers.containsKey(stream.provider());
+        return source instanceof AudioSource.Stream;
     }
 
     @Override
     public boolean available() {
-        return providers.values().stream().anyMatch(StreamProvider::available);
+        return providers.values().stream().anyMatch(provider -> provider.available(null));
     }
 
     @Override
     public AudioCapabilities capabilities() {
         boolean seek = false;
         boolean pause = false;
+        boolean volume = false;
+        boolean fade = false;
         boolean loop = false;
         boolean positional = false;
         boolean sync = false;
+        boolean perPlayer = false;
         boolean multi = false;
+        boolean cache = false;
         boolean lyrics = false;
         for (StreamProvider provider : providers.values()) {
-            if (!provider.available()) continue;
-            AudioCapabilities caps = provider.capabilities();
+            if (!provider.available(null)) continue;
+            AudioCapabilities caps = provider.capabilities(null);
             seek |= caps.seek();
             pause |= caps.pause();
+            volume |= caps.volume();
+            fade |= caps.fade();
             loop |= caps.loop();
             positional |= caps.positional();
             sync |= caps.synchronizedPlayback();
+            perPlayer |= caps.perPlayer();
             multi |= caps.multiSession();
+            cache |= caps.cache();
             lyrics |= caps.lyrics();
         }
-        return new AudioCapabilities(false, seek, pause, loop, positional, sync, multi, lyrics);
+        return new AudioCapabilities(false, seek, pause, volume, fade, loop,
+                positional, sync, perPlayer, multi, cache, lyrics);
     }
 
     @Override
     public PlaybackHandle play(Player player, AudioTrack track, AudioSource source, PlaybackOptions options) {
         if (!(source instanceof AudioSource.Stream stream)) return NoopPlaybackHandle.stopped();
-        StreamProvider provider = providers.get(stream.provider());
-        if (provider == null || !provider.available()) return NoopPlaybackHandle.stopped();
-        StreamHandle existing = active.get(track.id());
-        if (existing != null && existing.isLive()) {
-            return existing;
-        }
-        provider.play(stream);
-        StreamHandle handle = new StreamHandle(track.id(), provider);
-        active.put(track.id(), handle);
-        return handle;
+        StreamProvider provider = select(player, stream);
+        if (provider == null) return NoopPlaybackHandle.stopped();
+        long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
+        long startTime = System.nanoTime() / 1_000_000 + leadMs;
+        StreamPlaybackRequest request = new StreamPlaybackRequest(
+                UUID.randomUUID(), track, stream, options,
+                new StreamPlaybackRequest.StreamTiming(startTime, 0, 1));
+        return provider.play(player, request);
     }
 
     @Override
@@ -92,70 +101,24 @@ public final class StreamBackend implements AudioBackend {
         return NoopPlaybackHandle.unsupported();
     }
 
-    /** 共享队列句柄：停止只影响当前仍活跃的曲目，避免替换时误停新曲。 */
-    private final class StreamHandle implements PlaybackHandle {
-
-        private final UUID id = UUID.randomUUID();
-        private final Key trackId;
-        private final StreamProvider provider;
-        private PlaybackState state = PlaybackState.PLAYING;
-
-        private StreamHandle(Key trackId, StreamProvider provider) {
-            this.trackId = trackId;
-            this.provider = provider;
+    /** 选择 Provider：配置优先级 → 曲目指定 → 任意可用。 */
+    private StreamProvider select(Player player, AudioSource.Stream stream) {
+        for (String id : plugin.getConfig().getStringList("stream.provider-priority")) {
+            StreamProvider provider = providers.get(id);
+            if (provider != null && provider.available(player)) return provider;
         }
-
-        private boolean isLive() {
-            return state == PlaybackState.PLAYING || state == PlaybackState.PAUSED;
+        StreamProvider bySource = providers.get(stream.provider());
+        if (bySource != null && bySource.available(player)) return bySource;
+        for (StreamProvider provider : providers.values()) {
+            if (provider.available(player)) return provider;
         }
-
-        @Override
-        public UUID id() {
-            return id;
-        }
-
-        @Override
-        public PlaybackState state() {
-            return state;
-        }
-
-        @Override
-        public boolean stop() {
-            if (!isLive()) return false;
-            state = PlaybackState.STOPPED;
-            if (active.get(trackId) == this) {
-                active.remove(trackId);
-                provider.stop();
-            }
-            return true;
-        }
-
-        @Override
-        public boolean pause() {
-            if (state != PlaybackState.PLAYING) return false;
-            if (!provider.pause()) return false;
-            state = PlaybackState.PAUSED;
-            return true;
-        }
-
-        @Override
-        public boolean resume() {
-            if (state != PlaybackState.PAUSED) return false;
-            if (!provider.resume()) return false;
-            state = PlaybackState.PLAYING;
-            return true;
-        }
-
-        @Override
-        public boolean seek(Duration position) {
-            return false;
-        }
+        return null;
     }
 
     // 便于 /mineaudio debug 展示
     public List<String> describeProviders() {
         return providers.values().stream()
-                .map(provider -> provider.id() + (provider.available() ? " (可用)" : " (不可用)"))
+                .map(provider -> provider.id() + (provider.available(null) ? " (可用)" : " (不可用)"))
                 .toList();
     }
 }

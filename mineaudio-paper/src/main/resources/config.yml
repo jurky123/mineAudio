@@ -26,12 +26,36 @@ pack:
   assume-loaded: true
 
 stream:
-  # 未检测到 MoeMusic 客户端 mod 时是否仍尝试流播放（默认关闭，按 fallback 降级）
+  # 未检测到流媒体客户端时是否仍尝试流播放（默认关闭，按 fallback 降级）
   assume-available: false
   # 是否允许 uri 直链（仍交由 MoeMusic 的权限与媒体防火墙校验）
   http-enabled: false
   # http-enabled 时的主机白名单；留空表示不限制主机
   allowed-hosts: []
+  # StreamProvider 选择顺序（前面的优先）
+  provider-priority:
+    - mineaudio-client
+    - moemusic
+
+# MineAudio Client（配套 mod）协议
+stream-client:
+  enabled: true
+  # 握手等待时间；超时按未安装处理
+  handshake-timeout-ms: 3000
+  # 客户端状态上报间隔（客户端也会按此配置发送）
+  state-report-ms: 1000
+  sync:
+    enabled: true
+    # 全服同步的起播提前量
+    initial-lead-ms: 1200
+    ping-interval-ms: 10000
+    drift-threshold-ms: 150
+  firewall:
+    https-only: true
+    deny-private-network: true
+    max-redirects: 5
+  legacy-moemusic:
+    enabled: true
 
 # 输出更多日志，便于排查
 debug: false

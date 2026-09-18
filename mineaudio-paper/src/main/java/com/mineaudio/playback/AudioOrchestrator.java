@@ -81,11 +81,6 @@ public final class AudioOrchestrator implements MineAudio {
             debug("未知曲目 " + trackKey);
             return NoopPlaybackHandle.stopped();
         }
-        // 流媒体 Backend 无多会话能力（MoeMusic 为全服共享队列），只接受全服受众
-        if (track.primary() instanceof AudioSource.Stream && !audience.isGlobal()) {
-            plugin.getLogger().warning("流媒体曲目 " + track.id() + " 只支持 global 播放");
-            return NoopPlaybackHandle.stopped();
-        }
         PlaybackOptions options = override != null ? override : track.options();
         ActiveSession session = new ActiveSession(track, options, audience);
         for (Player player : audience.players()) {
@@ -177,10 +172,14 @@ public final class AudioOrchestrator implements MineAudio {
         boolean vanillaClient = packStatus.packAvailable(player);
         boolean seek = false;
         boolean pause = false;
+        boolean volume = false;
+        boolean fade = false;
         boolean loop = false;
         boolean positional = false;
         boolean sync = false;
+        boolean perPlayer = false;
         boolean multi = false;
+        boolean cache = false;
         boolean lyrics = false;
         for (AudioBackend backend : backends.all()) {
             if (!backend.available()) continue;
@@ -188,13 +187,18 @@ public final class AudioOrchestrator implements MineAudio {
             vanillaClient |= caps.vanillaClient();
             seek |= caps.seek();
             pause |= caps.pause();
+            volume |= caps.volume();
+            fade |= caps.fade();
             loop |= caps.loop();
             positional |= caps.positional();
             sync |= caps.synchronizedPlayback();
+            perPlayer |= caps.perPlayer();
             multi |= caps.multiSession();
+            cache |= caps.cache();
             lyrics |= caps.lyrics();
         }
-        return new AudioCapabilities(vanillaClient, seek, pause, loop, positional, sync, multi, lyrics);
+        return new AudioCapabilities(vanillaClient, seek, pause, volume, fade, loop,
+                positional, sync, perPlayer, multi, cache, lyrics);
     }
 
     @Override

@@ -16,8 +16,8 @@ import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.region.RegionManager;
+import com.mineaudio.stream.MoeMusicLegacyProvider;
 import com.mineaudio.stream.MoeMusicNowPlaying;
-import com.mineaudio.stream.MoeMusicProvider;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 import com.mineaudio.ui.AudioUi;
@@ -56,11 +56,11 @@ public final class MineAudioPlugin extends JavaPlugin {
         } else {
             getLogger().info("未检测到 NoteBlockAPI，NBS Backend 不可用（PACK / Vanilla 不受影响）");
         }
-        StreamBackend streamBackend = new StreamBackend();
-        streamBackend.register(new MoeMusicProvider(this));
+        StreamBackend streamBackend = new StreamBackend(this);
+        streamBackend.register(new MoeMusicLegacyProvider(this));
         backends.register(streamBackend);
         if (Bukkit.getPluginManager().getPlugin("MoeMusic") == null) {
-            getLogger().info("未检测到 MoeMusic，流媒体 Backend 不可用（安装后重启即可用）");
+            getLogger().info("未检测到 MoeMusic，流媒体 Legacy 路径不可用（安装 MineAudio Client 后不受影响）");
         }
         PlayerPackStatus packStatus = new PlayerPackStatus(this);
         PlayerStreamStatus streamStatus = new PlayerStreamStatus(this);

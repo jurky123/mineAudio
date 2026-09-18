@@ -1,26 +1,22 @@
 package com.mineaudio.stream;
 
+import org.bukkit.entity.Player;
+
 import com.mineaudio.api.AudioCapabilities;
-import com.mineaudio.api.AudioSource;
+import com.mineaudio.api.PlaybackHandle;
 
 /**
- * 流媒体播放器接入：MineAudio 只发播放控制与歌曲引用，音频流由客户端直连音源。
- * V1 提供 MoeMusic 命令桥，后续可加 Concerto。
+ * 流媒体播放器接入：MineAudio 只发播放控制与曲目引用，音频流由客户端直连音源。
+ * 每个玩家一次播放对应一个独立 session/handle。
  */
 public interface StreamProvider {
 
     String id();
 
-    boolean available();
+    /** 该玩家是否可用；player 为 null 时表示查询全局可用性。 */
+    boolean available(Player player);
 
-    AudioCapabilities capabilities();
+    AudioCapabilities capabilities(Player player);
 
-    /** 开始播放（MoeMusic 服务端队列为全服共享，无多会话能力）。 */
-    void play(AudioSource.Stream source);
-
-    void stop();
-
-    boolean pause();
-
-    boolean resume();
+    PlaybackHandle play(Player player, StreamPlaybackRequest request);
 }

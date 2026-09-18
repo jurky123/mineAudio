@@ -23,7 +23,8 @@ import net.kyori.adventure.sound.Sound;
 public final class SoundBackend implements AudioBackend {
 
     private static final AudioCapabilities CAPABILITIES =
-            new AudioCapabilities(true, false, false, true, true, false, true, false);
+            new AudioCapabilities(true, false, false, false, false, true,
+                    true, false, true, true, false, false);
 
     private final Plugin plugin;
 

@@ -1,31 +1,37 @@
 package com.mineaudio.stream;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.AudioCapabilities;
 import com.mineaudio.api.AudioSource;
+import com.mineaudio.api.PlaybackHandle;
+import com.mineaudio.api.PlaybackState;
+import com.mineaudio.playback.NoopPlaybackHandle;
 
 /**
- * MoeMusic（Spigot/Paper 服务端插件）命令桥：
- * 服务端队列是共享的，MineAudio 通过控制台命令点播/暂停/停止，音频由装有 MoeMusic 客户端的玩家直连音源。
- * 对应 MoeMusic 的命令：{@code /music addById <source> <trackId> --now} 等。
+ * MoeMusic Legacy：通过控制台命令桥驱动 MoeMusic 的共享队列。
+ * 能力有限（GLOBAL only、无 per-player、无 seek/volume），仅作为降级路径保留。
  */
-public final class MoeMusicProvider implements StreamProvider {
+public final class MoeMusicLegacyProvider implements StreamProvider {
 
     private static final String PLUGIN_NAME = "MoeMusic";
-    private static final AudioCapabilities CAPABILITIES =
-            new AudioCapabilities(false, false, true, false, false, true, false, false);
+    private static final AudioCapabilities CAPABILITIES = new AudioCapabilities(
+            false, false, true, false, false, false,
+            false, true, false, false, false, false);
 
     private final MineAudioPlugin plugin;
 
-    public MoeMusicProvider(MineAudioPlugin plugin) {
+    public MoeMusicLegacyProvider(MineAudioPlugin plugin) {
         this.plugin = plugin;
     }
 
@@ -35,44 +41,28 @@ public final class MoeMusicProvider implements StreamProvider {
     }
 
     @Override
-    public boolean available() {
+    public boolean available(Player player) {
         Plugin moeMusic = Bukkit.getPluginManager().getPlugin(PLUGIN_NAME);
         return moeMusic != null && moeMusic.isEnabled();
     }
 
     @Override
-    public AudioCapabilities capabilities() {
+    public AudioCapabilities capabilities(Player player) {
         return CAPABILITIES;
     }
 
     @Override
-    public void play(AudioSource.Stream source) {
-        Optional<String> command = playCommand(source,
+    public PlaybackHandle play(Player player, StreamPlaybackRequest request) {
+        Optional<String> command = playCommand(request.source(),
                 plugin.getConfig().getBoolean("stream.http-enabled", false),
                 plugin.getConfig().getStringList("stream.allowed-hosts"));
         if (command.isEmpty()) {
             plugin.getLogger().warning("[stream] 已拒绝流媒体曲目（检查 stream.http-enabled / allowed-hosts）："
-                    + describe(source));
-            return;
+                    + describe(request.source()));
+            return NoopPlaybackHandle.stopped();
         }
         dispatch(command.get());
-    }
-
-    @Override
-    public void stop() {
-        dispatch("music stop");
-    }
-
-    @Override
-    public boolean pause() {
-        dispatch("music pause");
-        return true;
-    }
-
-    @Override
-    public boolean resume() {
-        dispatch("music resume");
-        return true;
+        return new LegacyHandle();
     }
 
     /** 构建控制台命令；uri 直链默认禁用并受主机白名单约束，返回空表示拒绝。 */
@@ -113,5 +103,51 @@ public final class MoeMusicProvider implements StreamProvider {
     private static String describe(AudioSource.Stream source) {
         if (source.uri() != null) return source.provider() + " " + source.uri();
         return source.provider() + " " + source.source() + ":" + source.id();
+    }
+
+    /** 共享队列句柄：停止/暂停/继续都作用于 MoeMusic 全服队列。 */
+    private final class LegacyHandle implements PlaybackHandle {
+
+        private final UUID id = UUID.randomUUID();
+        private PlaybackState state = PlaybackState.PLAYING;
+
+        @Override
+        public UUID id() {
+            return id;
+        }
+
+        @Override
+        public PlaybackState state() {
+            return state;
+        }
+
+        @Override
+        public boolean stop() {
+            if (state != PlaybackState.PLAYING && state != PlaybackState.PAUSED) return false;
+            dispatch("music stop");
+            state = PlaybackState.STOPPED;
+            return true;
+        }
+
+        @Override
+        public boolean pause() {
+            if (state != PlaybackState.PLAYING) return false;
+            dispatch("music pause");
+            state = PlaybackState.PAUSED;
+            return true;
+        }
+
+        @Override
+        public boolean resume() {
+            if (state != PlaybackState.PAUSED) return false;
+            dispatch("music resume");
+            state = PlaybackState.PLAYING;
+            return true;
+        }
+
+        @Override
+        public boolean seek(Duration position) {
+            return false;
+        }
     }
 }
