@@ -203,7 +203,7 @@ public final class EmitterManager implements Listener {
 
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        String yaml = "# MineAudio 发声点配置（由 /audio emitter 命令写入，注释会丢失）\n"
+        String yaml = "# MineAudio 发声点配置（由 /mineaudio emitter 命令写入，注释会丢失）\n"
                 + new Yaml(options).dump(root);
         try {
             Files.writeString(new File(plugin.getDataFolder(), "emitters.yml").toPath(),

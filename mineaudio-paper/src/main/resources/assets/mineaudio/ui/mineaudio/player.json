@@ -524,6 +524,12 @@
           ]
         },
         {
+          "type": "text",
+          "text": "搜索 / 队列 / 歌词请按 M 打开 MoeMusic 播放器",
+          "color": "#808080",
+          "scale": 0.8
+        },
+        {
           "type": "row",
           "justify": "center",
           "children": [

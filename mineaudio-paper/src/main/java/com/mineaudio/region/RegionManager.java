@@ -249,7 +249,7 @@ public final class RegionManager {
 
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
-        String yaml = "# MineAudio 区域配置（由 /audio region 命令写入，注释会丢失）\n"
+        String yaml = "# MineAudio 区域配置（由 /mineaudio region 命令写入，注释会丢失）\n"
                 + new Yaml(options).dump(root);
         try {
             Files.writeString(new File(plugin.getDataFolder(), "regions.yml").toPath(),

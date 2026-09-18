@@ -22,7 +22,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
 - 发声点：世界坐标 + 半径，`ALWAYS` / `REDSTONE` / `COMMAND` / `INTERACT` 触发
 - Fallback：资源包未加载或 NoteBlockAPI 未安装时自动降级；缺失只影响对应 Backend
-- MineUI 音乐界面：`/audio ui` 查看当前播放、控制暂停/停止、点播曲目与停止环境音
+- MineUI 音乐界面：`/mineaudio ui` 查看当前播放、控制暂停/停止、点播曲目与停止环境音
 - 每玩家能力查询（`AudioCapabilities`）与事件（播放 / 停止 / 进出区域 / Emitter 启动）
 - Java API `com.mineaudio.api`：`play` / `playSfx` / `playSfxAt` / `stop` / `registerCue`
 
@@ -165,7 +165,7 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 
 1. 服务端安装 [MoeMusic](https://modrinth.com/mod/moemusic)（Spigot/Paper 1.18.2+）并把音源插件放入 `plugins/MoeMusic/plugins/`（网易云/QQ/酷狗/Bilibili 等，见其 [插件列表](https://github.com/lolicode-org/MoeMusic/wiki)）
 2. 玩家安装对应 Minecraft 版本的 MoeMusic 客户端 mod，进服后 MineAudio 通过 `moemusic:client_handshake` 通道自动识别
-3. 在 `tracks.yml` 定义 `type: STREAM` 曲目，`/audio play <曲目> global` 即可全服点播
+3. 在 `tracks.yml` 定义 `type: STREAM` 曲目，`/mineaudio play <曲目> global` 即可全服点播
 
 能力与限制（`AudioCapabilities` 如实反映）：
 
@@ -186,7 +186,7 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 
 ## 音乐界面（MineUI）
 
-`/audio ui` 打开声明式音乐界面（页面 JSON 随插件 jar 发布，改界面不用重发 mod）：
+`/mineaudio ui` 打开声明式音乐界面（页面 JSON 随插件 jar 发布，改界面不用重发 mod）：
 
 ```text
 ┌─────────────── MineAudio ───────────────┐
@@ -208,38 +208,58 @@ MineAudio  --/music addById <source> <id> --now-->  MoeMusic 服务端（共享�
 
 - 打开时下发完整状态，之后每秒与每次操作后增量推送（服务端权威状态）
 - 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
+- MoeMusic 自带的客户端界面（搜索 / 队列 / 歌词，按 `M` 打开）是 mod 内置界面，
+  无法并入 MineUI 页面；MineAudio 界面只做服务端可控的状态与控制
 - 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`
 - 后续（Phase 3 剩余）：搜索、队列、音量、歌词（依赖 MoeMusic 对外能力开放）
 
+### 计分板占位符（PlaceholderAPI）
+
+MineAudio 注册 `mineaudio` 扩展（需服务器安装 PlaceholderAPI），可在 TAB 等计分板配置中使用：
+
+| 占位符 | 说明 |
+| --- | --- |
+| `%mineaudio:nowplaying%` | 当前播放，如 `稻香 - 周杰伦`；无播放时为 `未在播放` |
+| `%mineaudio:title%` / `%mineaudio:artist%` | 标题 / 作者（流媒体曲目取自 tracks.yml 的 `title` / `author`） |
+| `%mineaudio:playing%` | `yes` / `no` |
+| `%mineaudio:stream%` | 该玩家是否装了 MoeMusic 客户端：`yes` / `no` |
+
+TAB 示例（本服已配置）：
+
+```yaml
+lines:
+  - "&6♪ &f%mineaudio:nowplaying%"
+```
+
 ## 命令
 
-`/audio`，权限 `mineaudio.admin`（默认 op）。玩家名/世界名/曲目/区域均有 Tab 补全。
+`/mineaudio`，权限 `mineaudio.admin`（默认 op）。玩家名/世界名/曲目/区域均有 Tab 补全。
 
 ```text
-/audio play <曲目> [self|player <玩家>|world <世界>|global]
-/audio stop [MUSIC|AMBIENT|SFX|UI] [self|player <玩家>|world <世界>|global]
+/mineaudio play <曲目> [self|player <玩家>|world <世界>|global]
+/mineaudio stop [MUSIC|AMBIENT|SFX|UI] [self|player <玩家>|world <世界>|global]
 
-/audio region list
-/audio region pos1 | pos2                       # 记录准星方块（5 格内）
-/audio region create <id>                       # 由 pos1/pos2 生成 Cuboid
-/audio region sphere <id> <半径>                # 以当前位置为中心
-/audio region settrack <id> <曲目|clear>
-/audio region setambient <id> <曲目...|clear>
-/audio region setpriority <id> <值>
-/audio region delete <id>
+/mineaudio region list
+/mineaudio region pos1 | pos2                       # 记录准星方块（5 格内）
+/mineaudio region create <id>                       # 由 pos1/pos2 生成 Cuboid
+/mineaudio region sphere <id> <半径>                # 以当前位置为中心
+/mineaudio region settrack <id> <曲目|clear>
+/mineaudio region setambient <id> <曲目...|clear>
+/mineaudio region setpriority <id> <值>
+/mineaudio region delete <id>
 
-/audio emitter list
-/audio emitter create <id> <曲目>               # 绑定准星方块
-/audio emitter bind <id>                        # 重新绑定准星方块
-/audio emitter settrack <id> <曲目>
-/audio emitter settrigger <id> <ALWAYS|REDSTONE|COMMAND|INTERACT>
-/audio emitter setradius <id> <半径>
-/audio emitter start|stop <id>
-/audio emitter delete <id>
+/mineaudio emitter list
+/mineaudio emitter create <id> <曲目>               # 绑定准星方块
+/mineaudio emitter bind <id>                        # 重新绑定准星方块
+/mineaudio emitter settrack <id> <曲目>
+/mineaudio emitter settrigger <id> <ALWAYS|REDSTONE|COMMAND|INTERACT>
+/mineaudio emitter setradius <id> <半径>
+/mineaudio emitter start|stop <id>
+/mineaudio emitter delete <id>
 
-/audio reload
-/audio ui                                       # MineUI 音乐界面（需客户端装 MineUI mod）
-/audio debug                                    # 曲目/音效/区域/发声点 + 在线玩家会话
+/mineaudio reload
+/mineaudio ui                                       # MineUI 音乐界面（需客户端装 MineUI mod）
+/mineaudio debug                                    # 曲目/音效/区域/发声点 + 在线玩家会话
 ```
 
 区域与发声点命令会写回对应 YAML（注释会丢失，文件头说明保留）。
@@ -299,7 +319,7 @@ mineAudio/
 │       ├── stream/     # StreamProvider / MoeMusicProvider 命令桥
 │       ├── track/      # Track / Cue 注册表与解析
 │       ├── profile/    # 每玩家资源包与流媒体客户端状态
-│       └── command/    # /audio
+│       └── command/    # /mineaudio
 ├── pack/               # 资源包源文件（OGG + sounds.json）
 ├── nbs/                # NBS 曲目源文件
 ├── tools/gen_pack.py
@@ -309,7 +329,7 @@ mineAudio/
 ## 状态与后续
 
 V1 已完成：PACK / Vanilla / NBS、四种 Bus、Player/Global/World/Region/Emitter 范围、
-Cuboid/Sphere 区域与优先级、红石 Emitter、Cue 与 Fallback、Java API、`/audio debug`。
+Cuboid/Sphere 区域与优先级、红石 Emitter、Cue 与 Fallback、Java API、`/mineaudio debug`。
 
 Phase 2 已完成（MoeMusic 部分）：`STREAM` 曲目、MoeMusic 命令桥、全服同步播放、
 按玩家客户端能力 fallback、`moemusic:client_handshake` 能力探测。

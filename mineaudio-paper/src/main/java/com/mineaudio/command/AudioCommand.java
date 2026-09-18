@@ -38,7 +38,7 @@ import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 
-/** /audio：点播、停止、区域管理、重载与调试。 */
+/** /mineaudio：点播、停止、区域管理、重载与调试。 */
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBCOMMANDS = List.of("play", "stop", "region", "emitter", "ui", "reload", "debug");
@@ -104,7 +104,7 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
 
     private void play(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.sendMessage(Component.text("用法：/audio play <曲目> [self|player <玩家>|world <世界>|global]",
+            sender.sendMessage(Component.text("用法：/mineaudio play <曲目> [self|player <玩家>|world <世界>|global]",
                     NamedTextColor.RED));
             return;
         }
@@ -193,7 +193,7 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         Location first = pos1.get(player.getUniqueId());
         Location second = pos2.get(player.getUniqueId());
         if (first == null || second == null) {
-            sender.sendMessage(Component.text("请先用 /audio region pos1 与 pos2 选两个角", NamedTextColor.RED));
+            sender.sendMessage(Component.text("请先用 /mineaudio region pos1 与 pos2 选两个角", NamedTextColor.RED));
             return;
         }
         if (!first.getWorld().equals(second.getWorld())) {
@@ -211,7 +211,7 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                 0, null, List.of(), 0, 0, defaultEnterTicks(), defaultExitTicks());
         plugin.regionManager().put(region);
         plugin.regionManager().save();
-        sender.sendMessage(Component.text("已创建区域 " + id + "，用 /audio region settrack 设置音乐",
+        sender.sendMessage(Component.text("已创建区域 " + id + "，用 /mineaudio region settrack 设置音乐",
                 NamedTextColor.GREEN));
     }
 
@@ -591,21 +591,21 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
 
     private void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
-                "用法：/audio play <曲目> [范围] | /audio stop [Bus] [范围] |"
-                        + " /audio region ... | /audio emitter ... | /audio ui | /audio reload | /audio debug",
+                "用法：/mineaudio play <曲目> [范围] | /mineaudio stop [Bus] [范围] |"
+                        + " /mineaudio region ... | /mineaudio emitter ... | /mineaudio ui | /mineaudio reload | /mineaudio debug",
                 NamedTextColor.RED));
     }
 
     private void sendRegionUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
-                "用法：/audio region list|pos1|pos2|create <id>|sphere <id> <半径>|delete <id>|"
+                "用法：/mineaudio region list|pos1|pos2|create <id>|sphere <id> <半径>|delete <id>|"
                         + "settrack <id> <曲目|clear>|setambient <id> <曲目...|clear>|"
                         + "setpriority <id> <值>", NamedTextColor.RED));
     }
 
     private void sendEmitterUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
-                "用法：/audio emitter list|create <id> <曲目>|bind <id>|delete <id>|"
+                "用法：/mineaudio emitter list|create <id> <曲目>|bind <id>|delete <id>|"
                         + "settrack <id> <曲目>|settrigger <id> <ALWAYS|REDSTONE|COMMAND|INTERACT>|"
                         + "setradius <id> <半径>|start <id>|stop <id>", NamedTextColor.RED));
     }

@@ -306,7 +306,7 @@ public final class AudioOrchestrator implements MineAudio {
         states.clear();
     }
 
-    /** /audio debug：列出该玩家当前会话。 */
+    /** /mineaudio debug：列出该玩家当前会话。 */
     public List<String> describe(Player player) {
         List<String> lines = new ArrayList<>();
         for (PlaybackSession playback : sessions(player)) {

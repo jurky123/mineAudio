@@ -1921,7 +1921,7 @@ emitters:
 MineAudio 使用：
 
 ```text
-/audio
+/mineaudio
 ```
 
 或：
@@ -1933,29 +1933,29 @@ MineAudio 使用：
 推荐：
 
 ```text
-/audio
+/mineaudio
 ```
 
 管理员：
 
 ```text
-/audio play <track>
+/mineaudio play <track>
 
-/audio play <track> global
-/audio play <track> player <player>
+/mineaudio play <track> global
+/mineaudio play <track> player <player>
 
-/audio stop
+/mineaudio stop
 
-/audio region create <id>
-/audio region settrack <id> <track>
-/audio region delete <id>
+/mineaudio region create <id>
+/mineaudio region settrack <id> <track>
+/mineaudio region delete <id>
 
-/audio emitter create <id>
-/audio emitter bind <id>
-/audio emitter settrack <id> <track>
+/mineaudio emitter create <id>
+/mineaudio emitter bind <id>
+/mineaudio emitter settrack <id> <track>
 
-/audio reload
-/audio debug
+/mineaudio reload
+/mineaudio debug
 ```
 
 ---
@@ -1965,7 +1965,7 @@ MineAudio 使用：
 强烈建议：
 
 ```text
-/audio debug
+/mineaudio debug
 ```
 
 显示：
@@ -2028,7 +2028,7 @@ Slider
 未来：
 
 ```text
-/audio ui
+/mineaudio ui
 ```
 
 打开：
@@ -2561,7 +2561,7 @@ V1 达到以下即可停止继续造框架：
 
 ✓ Backend capability / fallback
 
-✓ /audio debug
+✓ /mineaudio debug
 ```
 
 然后再做流媒体。

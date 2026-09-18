@@ -149,7 +149,7 @@ public final class MineUiIntegration implements AudioUi {
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         if (music == null) {
             session.state("title", "暂无音乐");
-            session.state("subtitle", "在下方列表点播，或使用 /audio play");
+            session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
             session.state("state", "IDLE");
             session.state("backend", "-");
             session.state("origin", "-");

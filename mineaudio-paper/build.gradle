@@ -24,6 +24,11 @@ repositories {
         name = 'jitpack'
         url = 'https://jitpack.io'
     }
+    // PlaceholderAPI（可选集成）
+    maven {
+        name = 'placeholderapi'
+        url = 'https://repo.extendedclip.com/releases/'
+    }
 }
 
 dependencies {
@@ -32,6 +37,8 @@ dependencies {
     compileOnly "com.github.koca2000:NoteBlockAPI:${noteblockapi_version}"
     // MineUI 业务 API（可选集成：未安装时退化为聊天状态）
     compileOnly "com.mineui:mineui-paper:${mineui_version}"
+    // PlaceholderAPI（可选集成：计分板显示正在播放）
+    compileOnly "me.clip:placeholderapi:${placeholderapi_version}"
 
     // 单测需要 YamlConfiguration 等 Bukkit 配置类，以及 api 模块的模型
     testImplementation "io.papermc.paper:paper-api:${paper_version}"

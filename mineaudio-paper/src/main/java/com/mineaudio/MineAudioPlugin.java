@@ -10,6 +10,7 @@ import com.mineaudio.command.AudioCommand;
 import com.mineaudio.config.YamlFile;
 import com.mineaudio.config.YamlNode;
 import com.mineaudio.emitter.EmitterManager;
+import com.mineaudio.integration.PlaceholderHook;
 import com.mineaudio.listener.PlayerConnectionListener;
 import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.profile.PlayerPackStatus;
@@ -38,6 +39,8 @@ public final class MineAudioPlugin extends JavaPlugin {
     private NbsBackend nbsBackend;
     private AudioOrchestrator orchestrator;
     private AudioUi audioUi = new NoopAudioUi();
+    private Runnable placeholderUnregister = () -> {
+    };
 
     @Override
     public void onEnable() {
@@ -62,6 +65,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         orchestrator = new AudioOrchestrator(this, trackRegistry, cueRegistry, backends,
                 packStatus, streamStatus);
         audioUi = MineUiHook.create(this);
+        placeholderUnregister = PlaceholderHook.create(this);
         MineAudioProvider.register(orchestrator);
         Bukkit.getPluginManager().registerEvents(new PlayerConnectionListener(orchestrator), this);
         Bukkit.getPluginManager().registerEvents(emitterManager, this);
@@ -69,7 +73,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         emitterManager.start();
 
         AudioCommand command = new AudioCommand(this, orchestrator);
-        PluginCommand audio = getCommand("audio");
+        PluginCommand audio = getCommand("mineaudio");
         if (audio != null) {
             audio.setExecutor(command);
             audio.setTabCompleter(command);
@@ -82,6 +86,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     @Override
     public void onDisable() {
         MineAudioProvider.unregister();
+        placeholderUnregister.run();
         audioUi.shutdown();
         regionManager.stop();
         emitterManager.stop();

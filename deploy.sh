@@ -41,6 +41,6 @@ if [ -f "$ROOT/pack/out/mineaudio.zip" ]; then
 fi
 echo
 echo "下一步："
-echo "  1. 重启服务器（或游戏内 /audio reload）"
+echo "  1. 重启服务器（或游戏内 /mineaudio reload）"
 echo "  2. 有资源包更新时执行 /packhost reload"
-echo "  3. /audio debug 检查运行状态"
+echo "  3. /mineaudio debug 检查运行状态"

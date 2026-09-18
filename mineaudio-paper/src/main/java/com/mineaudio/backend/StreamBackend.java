@@ -152,7 +152,7 @@ public final class StreamBackend implements AudioBackend {
         }
     }
 
-    // 便于 /audio debug 展示
+    // 便于 /mineaudio debug 展示
     public List<String> describeProviders() {
         return providers.values().stream()
                 .map(provider -> provider.id() + (provider.available() ? " (可用)" : " (不可用)"))

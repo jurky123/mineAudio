@@ -9,11 +9,12 @@ softdepend:
   - NoteBlockAPI
   - MoeMusic
   - MineUI
+  - PlaceholderAPI
 commands:
-  audio:
+  mineaudio:
     description: MineAudio 主命令
-    usage: /audio
+    usage: /mineaudio
 permissions:
   mineaudio.admin:
-    description: 允许 /audio 管理命令
+    description: 允许 /mineaudio 管理命令
     default: op

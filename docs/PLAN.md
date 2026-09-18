@@ -16,7 +16,7 @@
 - Region：Cuboid / Sphere、优先级叠加、边界迟滞、chunk 索引
 - Emitter：绑定世界坐标、位置声、红石触发
 - Track / Cue Registry、Primary + Fallback（资源包未加载 / NoteBlockAPI 未安装时降级）
-- Java API（`com.mineaudio.api`）、`/audio` 命令与 `/audio debug`
+- Java API（`com.mineaudio.api`）、`/mineaudio` 命令与 `/mineaudio debug`
 - PackHost 资源包接入（复用现有 `plugins/PackHost/packs/` 机制）
 - 单测（区域仲裁、迟滞、形状判定、配置解析、fallback 选择）
 
@@ -242,28 +242,28 @@ emitters:
 
 ## 8. 命令与权限
 
-`/audio`（避免与 MoeMusic / Concerto 的 `/music` 冲突），权限 `mineaudio.admin` 默认 op：
+`/mineaudio`（避免与 MoeMusic / Concerto 的 `/music` 冲突），权限 `mineaudio.admin` 默认 op：
 
 ```text
-/audio play <track> [self|player <玩家>|world <世界>|global]
-/audio stop [bus]
-/audio region pos1|pos2|create <id>|sphere <半径>|settrack <id> <track>|
+/mineaudio play <track> [self|player <玩家>|world <世界>|global]
+/mineaudio stop [bus]
+/mineaudio region pos1|pos2|create <id>|sphere <半径>|settrack <id> <track>|
               setambient <id> <track...>|delete <id>|list
-/audio emitter create <id>|bind <id>|settrack <id> <track>|settrigger <id> <trigger>|
+/mineaudio emitter create <id>|bind <id>|settrack <id> <track>|settrigger <id> <trigger>|
                  setradius <id> <r>|start <id>|stop <id>|delete <id>|list
-/audio reload
-/audio debug [玩家]
+/mineaudio reload
+/mineaudio debug [玩家]
 ```
 
-区域编辑用 `/audio region pos1|pos2` 选两点后 `create`，避免依赖 WorldEdit；命令改动写回 YAML（YamlConfiguration 会丢注释，文件头保留说明文字即可）。
+区域编辑用 `/mineaudio region pos1|pos2` 选两点后 `create`，避免依赖 WorldEdit；命令改动写回 YAML（YamlConfiguration 会丢注释，文件头保留说明文字即可）。
 
 ## 9. 里程碑
 
 | 阶段 | 内容 | 产出/验证 |
 | --- | --- | --- |
-| M0 骨架 | Gradle 多模块、plugin.yml、主类、配置加载、`/audio debug` 占位、deploy.sh | `./gradlew build` 通过，插件能在服务器 enable |
+| M0 骨架 | Gradle 多模块、plugin.yml、主类、配置加载、`/mineaudio debug` 占位、deploy.sh | `./gradlew build` 通过，插件能在服务器 enable |
 | M1 Registry | api 接口与事件、tracks/cues 解析、Cue 运行时注册 | 单测：解析、Cue 查询 |
-| M2 基础播放 | Orchestrator、PlayerAudioState、PACK/Vanilla Backend、fallback、`/audio play/stop` | 游戏内点播/停止、资源包未加载走 fallback |
+| M2 基础播放 | Orchestrator、PlayerAudioState、PACK/Vanilla Backend、fallback、`/mineaudio play/stop` | 游戏内点播/停止、资源包未加载走 fallback |
 | M3 NBS | NbsBackend、NoteBlockAPI 软依赖、循环/暂停、位置播放 | 无 NoteBlockAPI 时功能不受影响 |
 | M4 Region | 形状、chunk 索引、迟滞、优先级、世界层、ambient 层数、region 命令持久化 | 单测 + 游戏内重叠区域进出验证 |
 | M5 Emitter | 模型、ALWAYS/REDSTONE/COMMAND/INTERACT、位置声、emitter 命令持久化 | 红石开关验证、距离衰减 |
@@ -294,7 +294,7 @@ emitters:
 
 ## 9.6 Phase 3 实现说明（MineUI 音乐界面）
 
-- 页面 JSON 随插件 jar 发布：`assets/mineaudio/ui/mineaudio/player.json`，`/audio ui` 打开
+- 页面 JSON 随插件 jar 发布：`assets/mineaudio/ui/mineaudio/player.json`，`/mineaudio ui` 打开
 - 通过 `MineUiHook` 反射加载 `integration/MineUiIntegration`，未装 MineUI 或 API 不匹配时退化为
   Noop + 聊天提示（与 MineChess / MineSkin 的集成模式一致，`compileOnly` MineUI API）
 - 服务端权威状态：打开时 `snapshot()`，之后每秒（刷新任务）与每次操作后推送增量
@@ -304,6 +304,9 @@ emitters:
 - 客户端安装包：`tools/build_client_kit.sh` 从 Modrinth 解析 Fabric 26.2 版本，
   打包 MineUI 客户端 + MoeMusic + Bad Packets + Fabric Language Kotlin + Fabric API +
   Cloth Config/Mod Menu（可选）+ Fabric 安装器与中文安装说明
+- 命令统一为 `/mineaudio`（与 /mineui、/mineskin 等风格一致），不再使用 `/audio`
+- 计分板：注册 PlaceholderAPI 扩展（`%mineaudio:nowplaying%` / `title` / `artist` / `playing` / `stream`），
+  本服 TAB 侧边栏已用它替换原 TPS 与两行指令；MoeMusic 自带界面（M 键）无法并入 MineUI 页面
 
 V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHost 独立化与 `PackHostApi`；汇总仓库登记 mineAudio submodule。
 
@@ -314,7 +317,7 @@ V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHo
 3. 两个重叠 Cuboid + 一个 Sphere：进出时按 priority 切换，边界来回走不抖。
 4. 红石 Emitter 开关正常启停，位置声有距离衰减。
 5. 资源包未加载 / NoteBlockAPI 未安装时走 fallback 或静默跳过，无报错。
-6. `/audio debug` 输出玩家当前各 Bus、Region 栈、选中 Track、Backend 与能力状态。
+6. `/mineaudio debug` 输出玩家当前各 Bus、Region 栈、选中 Track、Backend 与能力状态。
 7. MineUNO / MineChess 接入不在 V1 范围，等 API 稳定后单独进行与验收（见 §9 尾注）。
 
 ## 11. 跨仓库事项（动手前需确认）
@@ -328,6 +331,6 @@ V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHo
 
 1. **World BGM 配置形态**：本方案用 `regions.yml` 的 `worlds:` 段（priority 0）；也可以强制用覆盖全世界的 CUBOID Region。倾向 `worlds:`，语义清晰。
 2. **Cue 注册方式**：本方案同时支持 `cues.yml` 与 `registerCue`（业务插件自带、随插件注销）。若希望 V1 更小，可以只留 `cues.yml`。
-3. **Region 编辑命令**：本方案用 `pos1/pos2/create`（不依赖 WorldEdit）；Sphere 用 `/audio region sphere <半径>` 以玩家位置为中心。
+3. **Region 编辑命令**：本方案用 `pos1/pos2/create`（不依赖 WorldEdit）；Sphere 用 `/mineaudio region sphere <半径>` 以玩家位置为中心。
 4. **流媒体 Adapter 的启动时机**：V1 完成后是否马上做 MoeMusic Adapter（Phase 2）。业务接入已确认放后，届时可直接评估。
 5. **API 版本策略**：V1 先与插件同版本号（0.1.0）；是否现在就把 `mineaudio-api` 独立发版/独立仓库，倾向暂不，等第二个消费者接入后再拆。
