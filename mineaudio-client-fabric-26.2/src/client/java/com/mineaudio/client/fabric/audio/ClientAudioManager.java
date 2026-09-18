@@ -158,6 +158,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final PcmAudioStream stream = new PcmAudioStream(ring);
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
+        private int ticks;
 
         private volatile ChannelAccess.ChannelHandle handle;
         private volatile float volume;
@@ -218,12 +219,35 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (closed || paused || finished || errorCode != null) return;
             ChannelAccess.ChannelHandle current = handle;
             if (current == null) return;
+            boolean diagnose = ticks++ == 40;
             current.execute(channel -> {
                 channel.updateStream();
                 if (!channel.playing()) {
                     channel.play();
                 }
+                if (diagnose) {
+                    diagnose(channel);
+                }
             });
+        }
+
+        private void diagnose(Channel channel) {
+            try {
+                java.lang.reflect.Field field = Channel.class.getDeclaredField("source");
+                field.setAccessible(true);
+                int source = field.getInt(channel);
+                int state = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_SOURCE_STATE);
+                int queued = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_BUFFERS_QUEUED);
+                int processed = org.lwjgl.openal.AL10.alGetSourcei(source, org.lwjgl.openal.AL10.AL_BUFFERS_PROCESSED);
+                float gain = org.lwjgl.openal.AL10.alGetSourcef(source, org.lwjgl.openal.AL10.AL_GAIN);
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                        "[audio] 诊断 session={} source={} state={} queued={} processed={} gain={} ring={}B playing={} stopped={}",
+                        id, source, state, queued, processed, gain, ring.available(),
+                        channel.playing(), channel.stopped());
+            } catch (Throwable t) {
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                        "[audio] 诊断失败 session={}：{}", id, t.toString());
+            }
         }
 
         void setPaused(boolean value) {
@@ -353,8 +377,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         @Override
         public void onPcm(byte[] data, int length, long timecodeMs) {
             if (firstPcm.compareAndSet(false, true)) {
+                int peak = 0;
+                for (int i = 0; i + 1 < length; i += 2) {
+                    int sample = (short) ((data[i] & 0xFF) | (data[i + 1] << 8));
+                    peak = Math.max(peak, Math.abs(sample));
+                }
                 com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                        "[audio] 收到首批 PCM session={} bytes={} timecode={}ms", id, length, timecodeMs);
+                        "[audio] 收到首批 PCM session={} bytes={} timecode={}ms peak={}", id, length, timecodeMs, peak);
             }
             int offset = 0;
             while (offset < length && !closed) {
