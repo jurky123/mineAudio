@@ -1,0 +1,15 @@
+{
+  "music.demo": {
+    "sounds": [
+      {
+        "name": "mineaudio:music/demo",
+        "stream": true
+      }
+    ]
+  },
+  "test": {
+    "sounds": [
+      "mineaudio:test"
+    ]
+  }
+}

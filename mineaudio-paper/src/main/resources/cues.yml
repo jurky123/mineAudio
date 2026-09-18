@@ -1,7 +1,20 @@
 # MineAudio 语义音效（Cue）：业务插件只认 key，素材与 fallback 在这里或由插件代码注册。
 #
-# 示例：
-# cues:
+# 字段说明：
+#   primary / fallback：type: PACK | VANILLA | NBS；PACK/VANILLA 用 sound，NBS 用 file
+#   bus: MUSIC | AMBIENT | SFX | UI（默认 SFX）
+#   volume / pitch
+cues:
+  # 示例音效：资源包里的 0.18 秒占位点击声，可用于测试 /audio play 与 playSfx
+  mineaudio:test:
+    primary:
+      type: PACK
+      sound: mineaudio:test
+    fallback:
+      type: VANILLA
+      sound: minecraft:ui.button.click
+#
+# 业务示例：
 #   mineuno:card.play:
 #     primary:
 #       type: PACK
@@ -9,12 +22,3 @@
 #     fallback:
 #       type: VANILLA
 #       sound: minecraft:item.book.page_turn
-#
-#   minechess:piece.move:
-#     primary:
-#       type: PACK
-#       sound: minechess:piece.move
-#     fallback:
-#       type: VANILLA
-#       sound: minecraft:block.wood.place
-cues: {}

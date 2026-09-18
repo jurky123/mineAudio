@@ -1,23 +1,37 @@
 # MineAudio 曲目（MUSIC / AMBIENT / NBS 等完整音频）
 #
-# 示例：
-# tracks:
+# 字段说明：
+#   type: PACK | VANILLA | NBS
+#   bus:  MUSIC | AMBIENT | SFX | UI（默认 MUSIC）
+#   duration: 毫秒，PACK / VANILLA 循环必须提供
+#   loop / volume / pitch / title / author
+#   fallback: 资源包未加载或 Backend 不可用时降级
+#     type: VANILLA | PACK
+#     sound: minecraft:xxx 或 mineaudio:xxx
+#   NBS 曲目用 file: xxx.nbs（文件放 plugins/MineAudio/nbs/）
+tracks:
+  # 示例曲目：资源包里的 12 秒占位音乐，可直接改成正式素材
+  demo:
+    type: PACK
+    bus: MUSIC
+    sound: mineaudio:music.demo
+    duration: 12000
+    loop: true
+    volume: 0.7
+    fallback:
+      type: VANILLA
+      sound: minecraft:music.overworld.forest
+#
+# 其他示例：
 #   spawn:
-#     type: PACK                 # PACK | VANILLA | NBS
-#     bus: MUSIC                 # MUSIC | AMBIENT | SFX | UI，默认 MUSIC
+#     type: PACK
+#     bus: MUSIC
 #     sound: mineaudio:music.spawn
-#     duration: 180000           # 毫秒；PACK / VANILLA 循环必须提供
+#     duration: 180000
 #     loop: true
-#     volume: 0.7
-#     title: 出生点主题曲
-#     author: jzk
-#     fallback:                  # 资源包未加载时降级
-#       type: VANILLA
-#       sound: minecraft:music.overworld.forest
 #
 #   tavern:
 #     type: NBS
 #     bus: MUSIC
-#     file: tavern.nbs           # 只允许 nbs/ 目录下的文件名
+#     file: tavern.nbs
 #     loop: true
-tracks: {}

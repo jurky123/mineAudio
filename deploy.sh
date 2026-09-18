@@ -25,6 +25,8 @@ if compgen -G "$ROOT/nbs/*.nbs" > /dev/null; then
 fi
 
 # 资源包交给 PackHost 合并下发（源目录 pack/，产物由 gen_pack.py 生成）
+echo "==> 生成资源包"
+python3 "$ROOT/tools/gen_pack.py"
 if [ -f "$ROOT/pack/out/mineaudio.zip" ]; then
     mkdir -p "$SERVER/plugins/PackHost/packs"
     cp "$ROOT/pack/out/mineaudio.zip" "$SERVER/plugins/PackHost/packs/"
