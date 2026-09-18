@@ -169,7 +169,19 @@ public final class NeteaseEapiResolver implements StreamResolver {
         long expiSeconds = item.has("expi") ? item.get("expi").getAsLong() : 0;
         Instant expiresAt = expiSeconds > 0 ? Instant.now().plusSeconds(expiSeconds) : null;
         long durationMs = item.has("time") ? item.get("time").getAsLong() : 0;
-        return new ResolveResult(URI.create(url), null, null, durationMs, expiresAt);
+        return new ResolveResult(upgradeToHttps(url), null, null, durationMs, expiresAt);
+    }
+
+    /** 网易 CDN 常返回 http 链接；升级为 https（客户端防火墙要求，CDN 实测支持）。 */
+    static URI upgradeToHttps(String url) {
+        URI uri = URI.create(url);
+        if (!"http".equalsIgnoreCase(uri.getScheme())) return uri;
+        try {
+            return new URI("https", uri.getUserInfo(), uri.getHost(), uri.getPort(),
+                    uri.getPath(), uri.getQuery(), uri.getFragment());
+        } catch (java.net.URISyntaxException e) {
+            return uri;
+        }
     }
 
     /** eapi 响应默认 AES-ECB 加密；解密失败时按明文处理（部分错误响应是明文 JSON）。 */
