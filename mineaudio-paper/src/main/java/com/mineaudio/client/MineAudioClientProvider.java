@@ -116,6 +116,10 @@ public final class MineAudioClientProvider implements StreamProvider {
                 null);
         protocol.send(player, Envelope.session(PacketType.PLAY, request.sessionId().toString(),
                 request.timing().revision(), ProtocolCodec.data(play)));
+        if (plugin.debug()) {
+            plugin.getLogger().info("[client] -> " + player.getName() + " PLAY session=" + request.sessionId()
+                    + " url=" + result.streamUrl());
+        }
         return new ClientStreamHandle(plugin, protocol, player, request.sessionId());
     }
 

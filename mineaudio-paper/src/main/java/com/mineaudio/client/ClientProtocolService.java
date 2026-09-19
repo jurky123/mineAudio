@@ -158,6 +158,11 @@ public final class ClientProtocolService {
             return;
         }
         stateCache.update(player, envelope.session(), envelope.revision(), state);
+        if (plugin.debug()) {
+            plugin.getLogger().info("[client] <- " + player.getName() + " STATE session="
+                    + envelope.session() + " state=" + state.state() + " pos=" + state.positionMs()
+                    + " dur=" + state.durationMs());
+        }
     }
 
     private void onRefreshResult(Envelope envelope) {

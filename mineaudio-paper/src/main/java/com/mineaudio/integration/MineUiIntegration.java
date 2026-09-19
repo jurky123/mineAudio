@@ -258,11 +258,17 @@ public final class MineUiIntegration implements AudioUi {
                     ? track.id().asString() : track.metadata().title());
             session.state("subtitle", track.metadata().author().isBlank()
                     ? track.id().asString() : track.metadata().author());
-            session.state("state", music.handle().state().name());
+            session.state("state", displayState(music, progress));
             session.state("backend", music.backend() == null ? "-" : music.backend());
             session.state("origin", music.origin().name());
             status = statusNote(music.handle());
             notifyStatus(player, status);
+            if (plugin.debug()) {
+                plugin.getLogger().info("[ui] " + player.getName() + " handle=" + music.handle().id()
+                        + " handleState=" + music.handle().state()
+                        + " snapshotSession=" + (progress == null ? "-" : progress.sessionId())
+                        + " snapshotState=" + (progress == null ? "-" : progress.state()));
+            }
         }
         session.state("status", status);
         session.state("status_visible", !status.isBlank());
@@ -324,7 +330,7 @@ public final class MineUiIntegration implements AudioUi {
                     ? track.id().asString() : track.metadata().title());
             hud.state("subtitle", track.metadata().author().isBlank()
                     ? track.id().asString() : track.metadata().author());
-            hud.state("state", music.handle().state().name());
+            hud.state("state", displayState(music, progress));
             String status = statusNote(music.handle());
             hud.state("status", status);
             hud.state("status_visible", !status.isBlank());
@@ -372,6 +378,8 @@ public final class MineUiIntegration implements AudioUi {
                 + (deltaMs >= 0 ? "+" : "") + deltaMs + "ms -> " + target + "ms ok=" + ok);
         session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
         push(player, session);
+        optimisticSeek(player, session, target,
+                progress == null ? 0 : progress.durationMs(), ok);
     }
 
     /** 进度条拖动提交（payload value 为 0-100 百分比）。 */
@@ -392,6 +400,24 @@ public final class MineUiIntegration implements AudioUi {
         plugin.getLogger().info("[ui] " + player.getName() + " seek -> " + target + "ms ok=" + ok);
         session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
         push(player, session);
+        optimisticSeek(player, session, target, progress.durationMs(), ok);
+    }
+
+    /** 拖动后先用目标位置乐观刷新 UI/HUD，避免等客户端下一份 STATE 才有反馈。 */
+    private void optimisticSeek(Player player, MineUiSession session, long target, long duration, boolean ok) {
+        if (!ok || duration <= 0) return;
+        long clamped = Math.max(0, Math.min(target, duration));
+        double percent = Math.round(1000.0 * clamped / duration) / 10.0;
+        String time = formatMs(clamped) + " / " + formatMs(duration);
+        session.state("percent", percent);
+        session.state("time", time);
+        session.state("playing", true);
+        MineUiSession hud = hudSessions.get(player.getUniqueId());
+        if (hud != null && !hud.closed()) {
+            hud.state("percent", percent);
+            hud.state("time", time);
+            hud.state("playing", true);
+        }
     }
 
     private void adjustVolume(Player player, float delta, MineUiSession session) {
@@ -439,6 +465,14 @@ public final class MineUiIntegration implements AudioUi {
     private static String statusNote(PlaybackHandle handle) {
         return handle instanceof StatusAware aware && aware.statusNote() != null
                 ? aware.statusNote() : "";
+    }
+
+    /** 展示用状态：优先客户端上报（与进度同一份数据），拿不到再退回句柄本地状态。 */
+    private static String displayState(PlaybackSession music, ClientPlaybackStateCache.Snapshot progress) {
+        if (progress != null && progress.state() != null && !progress.state().isBlank()) {
+            return progress.state();
+        }
+        return music.handle().state().name();
     }
 
     private void declareKeybinds(Player player) {
