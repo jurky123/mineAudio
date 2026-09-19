@@ -116,11 +116,11 @@ public final class MineUiIntegration implements AudioUi {
         return caps.contains("local_state") && caps.contains("mineaudio_local_v1");
     }
 
-    /** 当前曲目由自研客户端播放时才用本地绑定页面；NBS/PACK 等继续走服务端控制。 */
+    /** 有本地能力位且（空闲或自研客户端播放）时用本地绑定页面；NBS/PACK 等走服务端控制。 */
     private boolean useLocalPage(Player player) {
         if (!hasLocalState(player)) return false;
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
-        return music != null && "stream".equals(music.backend());
+        return music == null || "stream".equals(music.backend());
     }
 
     @Override

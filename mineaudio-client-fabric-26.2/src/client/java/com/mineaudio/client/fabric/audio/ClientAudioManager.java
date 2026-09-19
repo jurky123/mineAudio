@@ -339,6 +339,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile boolean presentRunning;
         /** 起播时真正会先被听到的媒体位置（startPosition，或迟到跳播后的位置）。 */
         private volatile long startAnchorMs;
+        /** 是否已做过首次起播锚定；seek/恢复后的锚定由 onPcm 首帧负责，通道启动不得覆盖。 */
+        private volatile boolean playbackAnchored;
         private final long createdAtMs = System.currentTimeMillis();
 
         Session(String sessionId, Packets.Play play) {
@@ -454,9 +456,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     applySpatial(channel);
                     channel.play();
                     // OpenAL 起播会立刻预取缓冲，不能再用“解码位置-环形缓冲”推算；
-                    // 首播锚在起播位置；seek/恢复后等目标首帧到达时在 onPcm 里重锚
-                    if (pendingSeekTargetMs < 0) {
+                    // 只在“首次起播”时用 startAnchorMs 锚定；seek/恢复后的锚点由 onPcm 首帧负责，避免被覆盖成 0
+                    if (!playbackAnchored && pendingSeekTargetMs < 0) {
                         anchorPresentation(startAnchorMs);
+                        playbackAnchored = true;
                     }
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                             "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B anchor={}ms",
@@ -740,6 +743,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     // 音频确实在目标位置：直接锚定目标，避免重连后首帧 timecode 相对化导致进度归零
                     if (!paused) {
                         anchorPresentation(target);
+                        playbackAnchored = true;
                         report();
                     }
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
@@ -749,6 +753,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     pendingSeekTargetMs = -1;
                     if (!paused) {
                         anchorPresentation(target);
+                        playbackAnchored = true;
                         report();
                     }
                 }
