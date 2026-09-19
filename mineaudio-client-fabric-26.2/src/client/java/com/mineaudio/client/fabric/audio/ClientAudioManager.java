@@ -39,6 +39,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
     private static final int RING_BYTES = 48000 * 2 * 2 * 2;
     private static final int BYTES_PER_MS = 48000 * 2 * 2 / 1000;
+    /** 超过该时长视为未知（LavaPlayer 对无 Content-Length 的流会报 Long.MAX_VALUE）。 */
+    private static final long MAX_REASONABLE_DURATION_MS = 12L * 60 * 60 * 1000;
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private ChannelAccess channelAccess;
@@ -356,8 +358,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 lastAppliedVolume = effective;
                 current.execute(channel -> channel.setVolume(effective));
             }
-            if (paused || finished || errorCode != null) return;
             if (current == null) return;
+            if (paused) {
+                // 关闭界面会触发 SoundEngine.resume()，它无条件 unpause 所有通道（包括我们的），
+                // 这里持续重申暂停状态，避免“暂停后关 UI 又继续播放”
+                current.execute(channel -> {
+                    if (channel.playing()) {
+                        channel.pause();
+                    }
+                });
+                return;
+            }
+            if (finished || errorCode != null) return;
             current.execute(channel -> {
                 channel.updateStream();
                 if (!channel.playing()) {
@@ -493,12 +505,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             } else {
                 state = "BUFFERING";
             }
-            long duration = decoder.durationMs() > 0 ? decoder.durationMs() : durationHintMs;
+            long decoderDuration = decoder.durationMs();
+            long duration = decoderDuration > 0 && decoderDuration <= MAX_REASONABLE_DURATION_MS
+                    ? decoderDuration : durationHintMs;
+            long position = Math.max(0, decoder.positionMs());
+            if (duration > 0 && position > duration) {
+                position = duration;
+            }
             int availableBytes = ring.available();
             Packets.State.Error error = errorCode == null
                     ? null : new Packets.State.Error(errorCode, errorMessage);
             Packets.State snapshot = new Packets.State(
-                    ++seq, state, decoder.positionMs(), duration,
+                    ++seq, state, position, duration,
                     availableBytes / BYTES_PER_MS,
                     availableBytes / (double) ring.capacity(),
                     ProtocolClient.get().clock().rttMs(), 0, error);

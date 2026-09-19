@@ -196,7 +196,9 @@ public final class SecureMediaGateway implements AutoCloseable {
         OutputStream fileOut = part == null ? null : Files.newOutputStream(part);
         exchange.getResponseHeaders().set("Content-Type", "application/octet-stream");
         exchange.getResponseHeaders().set("Accept-Ranges", "bytes");
-        exchange.sendResponseHeaders(200, 0);
+        // 透传上游 Content-Length：解码器要靠它推算时长（缺失会报未知时长，进度条无法工作）
+        long upstreamLength = response.headers().firstValueAsLong("Content-Length").orElse(-1);
+        exchange.sendResponseHeaders(200, upstreamLength > 0 ? upstreamLength : 0);
         OutputStream body = exchange.getResponseBody();
         long written = 0;
         try (InputStream in = response.body()) {

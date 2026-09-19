@@ -43,6 +43,8 @@ stream-client:
   handshake-timeout-ms: 3000
   # 客户端状态上报间隔（客户端也会按此配置发送）
   state-report-ms: 1000
+  # 进服自动开启“正在播放”HUD（仅对有 MineUI HUD 能力位的客户端；无播放时自动隐藏）
+  hud-auto: true
   sync:
     enabled: true
     # 全服同步的起播提前量

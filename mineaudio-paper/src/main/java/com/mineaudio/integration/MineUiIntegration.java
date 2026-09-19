@@ -75,7 +75,9 @@ public final class MineUiIntegration implements AudioUi {
         Bukkit.getPluginManager().registerEvents(new Listener() {
             @EventHandler
             public void onJoin(PlayerJoinEvent event) {
-                declareKeybinds(event.getPlayer());
+                Player player = event.getPlayer();
+                declareKeybinds(player);
+                autoOpenHud(player, 0);
             }
 
             @EventHandler
@@ -107,13 +109,25 @@ public final class MineUiIntegration implements AudioUi {
             return false;
         }
         MineUiSession hud = api.openHud(plugin, player, APP, "hud", hudPage,
-                new HudLayout("top_right", 6f, 6f, 1f));
+                new HudLayout("top_left", 4f, 4f, 1f));
         hudSessions.put(playerId, hud);
         pushHud(player);
         hud.snapshot();
         startHudRefresher(player);
         plugin.getLogger().info("[ui] " + player.getName() + " HUD 已开启");
         return true;
+    }
+
+    /** 进服自动开启 HUD（可配置关闭）；客户端握手有延迟，未就绪时重试。 */
+    private void autoOpenHud(Player player, int attempt) {
+        if (!plugin.getConfig().getBoolean("stream-client.hud-auto", true)) return;
+        if (hudSessions.containsKey(player.getUniqueId())) return;
+        if (hudSupported(player)) {
+            toggleHud(player);
+            return;
+        }
+        if (attempt >= 4 || !player.isOnline()) return;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> autoOpenHud(player, attempt + 1), 40L);
     }
 
     @Override
