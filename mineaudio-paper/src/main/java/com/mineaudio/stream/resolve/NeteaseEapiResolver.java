@@ -249,10 +249,15 @@ public final class NeteaseEapiResolver implements StreamResolver {
     }
 
     static String decodeBody(byte[] body) {
+        // 明文响应直接使用；否则才尝试 AES 解密（避免明文长度恰为 16 倍数时解出乱码）
+        String plain = new String(body, java.nio.charset.StandardCharsets.UTF_8).trim();
+        if (plain.startsWith("{")) {
+            return plain;
+        }
         try {
             return EapiCrypto.decrypt(body);
         } catch (Exception e) {
-            return new String(body, java.nio.charset.StandardCharsets.UTF_8);
+            return plain;
         }
     }
 

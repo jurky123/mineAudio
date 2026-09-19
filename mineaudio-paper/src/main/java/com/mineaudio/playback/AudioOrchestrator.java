@@ -302,6 +302,11 @@ public final class AudioOrchestrator implements MineAudio {
             return EnqueueResult.FULL;
         }
         queue.addLast(track);
+        // 空闲（当前没有 MUSIC 会话）时点歌即播；正在播放则等自然结束后续播
+        PlayerAudioState state = states.get(player.getUniqueId());
+        if (state == null || state.music() == null) {
+            playNextQueued(player);
+        }
         return EnqueueResult.ADDED;
     }
 

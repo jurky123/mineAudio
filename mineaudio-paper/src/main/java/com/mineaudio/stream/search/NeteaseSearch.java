@@ -166,12 +166,7 @@ public final class NeteaseSearch {
     }
 
     private CompletionStage<List<SearchResult>> enrich(List<SearchResult> base) {
-        StringBuilder ids = new StringBuilder();
-        for (SearchResult result : base) {
-            if (ids.length() > 0) ids.append(',');
-            ids.append("{\"id\":\"").append(result.id()).append("\"}");
-        }
-        String json = "{\"c\":\"[" + ids + "]\"}";
+        String json = detailParams(base);
         HttpRequest request = HttpRequest.newBuilder(URI.create(DETAIL_ENDPOINT))
                 .timeout(Duration.ofMillis(timeoutMs))
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -189,6 +184,16 @@ public final class NeteaseSearch {
                         return base;
                     }
                 });
+    }
+
+    /** song/detail 的 eapi 参数：c 是字符串化的 JSON 数组，内层引号必须转义。 */
+    static String detailParams(List<SearchResult> base) {
+        StringBuilder ids = new StringBuilder();
+        for (SearchResult result : base) {
+            if (ids.length() > 0) ids.append(',');
+            ids.append("{\\\"id\\\":\\\"").append(result.id()).append("\\\"}");
+        }
+        return "{\"c\":\"[" + ids + "]\"}";
     }
 
     static List<SearchResult> mergeDetail(List<SearchResult> base, String body) {
@@ -228,10 +233,15 @@ public final class NeteaseSearch {
     }
 
     private static String decodeBody(byte[] body) {
+        // 明文响应直接使用；否则才尝试 AES 解密（避免明文长度恰为 16 倍数时解出乱码）
+        String plain = new String(body, StandardCharsets.UTF_8).trim();
+        if (plain.startsWith("{")) {
+            return plain;
+        }
         try {
             return EapiCrypto.decrypt(body);
         } catch (Exception e) {
-            return new String(body, StandardCharsets.UTF_8);
+            return plain;
         }
     }
 

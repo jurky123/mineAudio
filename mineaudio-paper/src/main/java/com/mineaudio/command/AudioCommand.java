@@ -195,8 +195,10 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage(Component.text("搜索结果（" + results.size() + "）：", NamedTextColor.YELLOW));
                     for (int i = 0; i < results.size(); i++) {
                         var result = results.get(i);
+                        boolean hasCover = result.coverUrl() != null && !result.coverUrl().isBlank();
                         sender.sendMessage(Component.text("  " + (i + 1) + ". " + result.title()
-                                + " - " + result.artist() + "  [" + result.note() + "]",
+                                + " - " + result.artist() + "  [" + result.note()
+                                + (hasCover ? "·封面" : "·无封面") + "]",
                                 result.playable() ? NamedTextColor.WHITE : NamedTextColor.DARK_GRAY));
                     }
                     sender.sendMessage(Component.text(

@@ -51,6 +51,15 @@ class NeteaseSearchTest {
     }
 
     @Test
+    void detailParamsEscapesInnerQuotes() {
+        List<SearchResult> base = List.of(
+                new SearchResult("ncmlite", "1", "a", "b", null, 0, true, "可播放"),
+                new SearchResult("ncmlite", "2", "c", "d", null, 0, true, "可播放"));
+        assertEquals("{\"c\":\"[{\\\"id\\\":\\\"1\\\"},{\\\"id\\\":\\\"2\\\"}]\"}",
+                NeteaseSearch.detailParams(base));
+    }
+
+    @Test
     void parseSearchRejectsNonJson() {
         try {
             NeteaseSearch.parseSearch("not-json");
