@@ -37,10 +37,9 @@ public final class ClientPlaybackStateCache {
             return "PLAYING".equals(state);
         }
 
-        /** 展示用位置：PLAYING 时按收到时间外推。 */
+        /** 展示用位置：客户端上报的就是听感位置（已扣缓冲），服务端不再外推，避免与客户端插值叠加。 */
         public long displayPositionMs() {
-            if (!playing()) return positionMs;
-            return positionMs + Math.max(0, System.currentTimeMillis() - receivedAtMs);
+            return positionMs;
         }
     }
 

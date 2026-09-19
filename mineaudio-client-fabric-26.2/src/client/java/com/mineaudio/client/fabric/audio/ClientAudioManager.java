@@ -220,6 +220,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
+        /** seek 代际：seek 后旧解码回调即使已在途中也会被丢弃，避免旧 PCM 污染新位置。 */
+        private final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
+        private static final long SEEK_FILTER_TOLERANCE_MS = 1500;
+        private static final long SEEK_FILTER_TIMEOUT_MS = 3000;
 
         private volatile ChannelAccess.ChannelHandle handle;
         private volatile String localUrl;
@@ -234,6 +238,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile int seq;
         private volatile long pendingActionAt;
         private volatile Runnable pendingAction;
+        private volatile long pendingSeekTargetMs = -1;
+        private volatile long pendingSeekDeadlineAt;
 
         Session(String sessionId, Packets.Play play) {
             this.id = sessionId;
@@ -412,6 +418,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] SEEK session={} -> {}ms (was {}ms, seekable={})",
                     id, positionMs, decoder.positionMs(), decoder.seekable());
+            generation.incrementAndGet();
+            pendingSeekTargetMs = positionMs;
+            pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
             decoder.seek(positionMs);
             ring.clear();
             stream.reset();
@@ -508,11 +517,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             long decoderDuration = decoder.durationMs();
             long duration = decoderDuration > 0 && decoderDuration <= MAX_REASONABLE_DURATION_MS
                     ? decoderDuration : durationHintMs;
-            long position = Math.max(0, decoder.positionMs());
+            // 听感位置：解码位置减去 RingBuffer 中尚未交给播放器的部分，避免进度条领先声音
+            int availableBytes = ring.available();
+            long decodedPosition = Math.max(0, decoder.positionMs());
+            long position = Math.max(0, decodedPosition - availableBytes / BYTES_PER_MS);
             if (duration > 0 && position > duration) {
                 position = duration;
             }
-            int availableBytes = ring.available();
             Packets.State.Error error = errorCode == null
                     ? null : new Packets.State.Error(errorCode, errorMessage);
             Packets.State snapshot = new Packets.State(
@@ -536,6 +547,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onPcm(byte[] data, int length, long timecodeMs) {
+            long gen = generation.get();
+            long target = pendingSeekTargetMs;
+            if (target >= 0) {
+                if (Math.abs(timecodeMs - target) <= SEEK_FILTER_TOLERANCE_MS) {
+                    pendingSeekTargetMs = -1;
+                } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
+                    // seek 后 LavaPlayer 内部仍在吐旧位置帧：丢弃，等目标附近的帧
+                    return;
+                } else {
+                    pendingSeekTargetMs = -1;
+                }
+            }
             boolean first = firstPcm.compareAndSet(false, true);
             if (first) {
                 int peak = 0;
@@ -548,6 +571,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             }
             int offset = 0;
             while (offset < length && !closed) {
+                if (generation.get() != gen) {
+                    return;
+                }
                 int written = ring.write(data, offset, length - offset);
                 if (written == 0) {
                     try {

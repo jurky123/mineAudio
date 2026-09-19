@@ -49,6 +49,11 @@ public final class MineUiIntegration implements AudioUi {
     private static final int TRACK_SLOTS = 6;
     private static final int AMBIENT_SLOTS = 3;
     private static final long SEEK_STEP_MS = 15_000L;
+    private static final long SEEK_APPLY_TOLERANCE_MS = 2_000L;
+    private static final long SEEK_TIMEOUT_MS = 5_000L;
+
+    private record PendingSeek(long targetMs, boolean playing, long sentAtMs) {
+    }
 
     private final MineAudioPlugin plugin;
     private final MineUi api;
@@ -60,6 +65,7 @@ public final class MineUiIntegration implements AudioUi {
     private final Map<UUID, BukkitTask> hudRefreshers = new HashMap<>();
     private final Map<UUID, List<Key>> trackOrder = new HashMap<>();
     private final Map<UUID, Float> volumes = new HashMap<>();
+    private final Map<UUID, PendingSeek> pendingSeeks = new HashMap<>();
     private final Map<UUID, String> lastStatus = new HashMap<>();
     private boolean broken;
 
@@ -215,6 +221,7 @@ public final class MineUiIntegration implements AudioUi {
             hud.close();
         }
         volumes.remove(playerId);
+        pendingSeeks.remove(playerId);
         lastStatus.remove(playerId);
     }
 
@@ -236,6 +243,7 @@ public final class MineUiIntegration implements AudioUi {
         }
         trackOrder.clear();
         volumes.clear();
+        pendingSeeks.clear();
         lastStatus.clear();
     }
 
@@ -272,7 +280,10 @@ public final class MineUiIntegration implements AudioUi {
         }
         session.state("status", status);
         session.state("status_visible", !status.isBlank());
-        pushProgress(session, progress);
+        if (music != null) {
+            resolvePendingSeek(player, session, progress);
+        }
+        pushProgress(player, session, music == null ? null : progress);
         session.state("volume", Math.round(volumeOf(player) * 100) + "%");
         session.state("stream", plugin.orchestrator().streamAvailable(player)
                 ? "流媒体客户端：已连接" : "流媒体客户端：未安装（流媒体将走 fallback）");
@@ -303,8 +314,10 @@ public final class MineUiIntegration implements AudioUi {
         pushHud(player);
     }
 
-    private void pushProgress(MineUiSession session, ClientPlaybackStateCache.Snapshot progress) {
-        boolean hasProgress = progress != null && progress.durationMs() > 0;
+    private void pushProgress(Player player, MineUiSession session, ClientPlaybackStateCache.Snapshot progress) {
+        long duration = progress == null ? 0 : progress.durationMs();
+        PendingSeek pending = pendingSeeks.get(player.getUniqueId());
+        boolean hasProgress = duration > 0 && (progress != null || pending != null);
         session.state("progress_visible", hasProgress);
         if (!hasProgress) {
             session.state("percent", 0);
@@ -312,10 +325,20 @@ public final class MineUiIntegration implements AudioUi {
             session.state("time", "");
             return;
         }
-        long position = Math.min(Math.max(0, progress.displayPositionMs()), progress.durationMs());
-        session.state("percent", Math.round(1000.0 * position / progress.durationMs()) / 10.0);
-        session.state("playing", progress.playing());
-        session.state("time", formatMs(position) + " / " + formatMs(progress.durationMs()));
+        long position;
+        boolean playing;
+        if (pending != null) {
+            // 定位中：展示目标位置，保留定位前的播放/暂停状态，等客户端 STATE 确认或超时回退
+            position = pending.targetMs();
+            playing = pending.playing();
+        } else {
+            position = progress.displayPositionMs();
+            playing = progress.playing();
+        }
+        position = Math.min(Math.max(0, position), duration);
+        session.state("percent", Math.round(1000.0 * position / duration) / 10.0);
+        session.state("playing", playing);
+        session.state("time", formatMs(position) + " / " + formatMs(duration));
     }
 
     private void pushHud(Player player) {
@@ -342,7 +365,7 @@ public final class MineUiIntegration implements AudioUi {
             hud.state("status", "");
             hud.state("status_visible", false);
         }
-        pushProgress(hud, progress);
+        pushProgress(player, hud, progress);
     }
 
     private void playTrack(Player player, int index, boolean global) {
@@ -368,18 +391,18 @@ public final class MineUiIntegration implements AudioUi {
             return;
         }
         ClientPlaybackStateCache.Snapshot progress = snapshotOf(player, music);
-        long current = progress == null ? 0 : progress.displayPositionMs();
+        long duration = progress == null ? 0 : progress.durationMs();
+        long current = pendingTarget(player, progress == null ? 0 : progress.displayPositionMs());
         long target = Math.max(0, current + deltaMs);
-        if (progress != null && progress.durationMs() > 0) {
-            target = Math.min(target, progress.durationMs());
+        if (duration > 0) {
+            target = Math.min(target, duration);
         }
         boolean ok = music.handle().seek(Duration.ofMillis(target));
         plugin.getLogger().info("[ui] " + player.getName() + " seek "
                 + (deltaMs >= 0 ? "+" : "") + deltaMs + "ms -> " + target + "ms ok=" + ok);
-        session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
+        session.state("note", ok ? "正在定位到 " + formatMs(target) + "…" : "当前 Backend 不支持定位");
+        markPendingSeek(player, target, ok);
         push(player, session);
-        optimisticSeek(player, session, target,
-                progress == null ? 0 : progress.durationMs(), ok);
     }
 
     /** 进度条拖动提交（payload value 为 0-100 百分比）。 */
@@ -398,25 +421,38 @@ public final class MineUiIntegration implements AudioUi {
         long target = Math.round(progress.durationMs() * Math.min(100.0, percent) / 100.0);
         boolean ok = music.handle().seek(Duration.ofMillis(target));
         plugin.getLogger().info("[ui] " + player.getName() + " seek -> " + target + "ms ok=" + ok);
-        session.state("note", ok ? "已定位到 " + formatMs(target) : "当前 Backend 不支持定位");
+        session.state("note", ok ? "正在定位到 " + formatMs(target) + "…" : "当前 Backend 不支持定位");
+        markPendingSeek(player, target, ok);
         push(player, session);
-        optimisticSeek(player, session, target, progress.durationMs(), ok);
     }
 
-    /** 拖动后先用目标位置乐观刷新 UI/HUD，避免等客户端下一份 STATE 才有反馈。 */
-    private void optimisticSeek(Player player, MineUiSession session, long target, long duration, boolean ok) {
-        if (!ok || duration <= 0) return;
-        long clamped = Math.max(0, Math.min(target, duration));
-        double percent = Math.round(1000.0 * clamped / duration) / 10.0;
-        String time = formatMs(clamped) + " / " + formatMs(duration);
-        session.state("percent", percent);
-        session.state("time", time);
-        session.state("playing", true);
-        MineUiSession hud = hudSessions.get(player.getUniqueId());
-        if (hud != null && !hud.closed()) {
-            hud.state("percent", percent);
-            hud.state("time", time);
-            hud.state("playing", true);
+    /** 相对定位时以“待生效目标”为基准，连续点按可以叠加。 */
+    private long pendingTarget(Player player, long fallback) {
+        PendingSeek pending = pendingSeeks.get(player.getUniqueId());
+        return pending == null ? fallback : pending.targetMs();
+    }
+
+    /** 记录待确认的 seek：等客户端上报落在目标附近才算生效，超时回退显示实际进度。 */
+    private void markPendingSeek(Player player, long targetMs, boolean ok) {
+        if (!ok) return;
+        PlaybackSession music = plugin.orchestrator().currentMusic(player);
+        ClientPlaybackStateCache.Snapshot snapshot = music == null ? null : snapshotOf(player, music);
+        boolean playing = snapshot != null && snapshot.playing();
+        pendingSeeks.put(player.getUniqueId(), new PendingSeek(targetMs, playing, System.currentTimeMillis()));
+    }
+
+    private void resolvePendingSeek(Player player, MineUiSession session, ClientPlaybackStateCache.Snapshot progress) {
+        PendingSeek pending = pendingSeeks.get(player.getUniqueId());
+        if (pending == null) return;
+        long position = progress == null ? -1 : progress.displayPositionMs();
+        if (position >= 0 && Math.abs(position - pending.targetMs()) <= SEEK_APPLY_TOLERANCE_MS) {
+            pendingSeeks.remove(player.getUniqueId());
+            session.state("note", "已定位到 " + formatMs(pending.targetMs()));
+            return;
+        }
+        if (System.currentTimeMillis() - pending.sentAtMs() > SEEK_TIMEOUT_MS) {
+            pendingSeeks.remove(player.getUniqueId());
+            session.state("note", "定位未生效，已显示实际进度");
         }
     }
 

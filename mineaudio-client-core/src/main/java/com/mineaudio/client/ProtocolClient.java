@@ -118,11 +118,12 @@ public final class ProtocolClient {
         this.lastPingAt = 0;
         this.lastStateReportAt = 0;
         this.helloAttempts = 0;
-        this.lastHelloAt = 0;
+        this.lastHelloAt = System.nanoTime() / 1_000_000;
         this.clock.reset();
         this.hello = new Packets.Hello(modVersion, minecraft, locale,
                 List.copyOf(capabilities), List.copyOf(formats));
         send(PacketType.HELLO, ProtocolCodec.data(hello));
+        helloAttempts = 1;
     }
 
     public void onDisconnect() {
@@ -196,8 +197,8 @@ public final class ProtocolClient {
     private void handleHelloAck(Envelope envelope) {
         try {
             serverInfo = ProtocolCodec.data(envelope, Packets.HelloAck.class);
-        } catch (Throwable t) {
-            LOG.log(System.Logger.Level.WARNING, "HELLO_ACK 解析失败: " + t);
+        } catch (ProtocolException | RuntimeException | LinkageError e) {
+            LOG.log(System.Logger.Level.WARNING, "HELLO_ACK 解析失败: " + e);
             return;
         }
         connected = true;
