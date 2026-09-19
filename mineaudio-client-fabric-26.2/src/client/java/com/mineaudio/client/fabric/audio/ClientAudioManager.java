@@ -304,7 +304,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** 媒体内容标识（不含会话身份），跨会话复用缓存。 */
         private final String cacheKey;
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
-        private final PcmAudioStream stream = new PcmAudioStream(ring);
+        private volatile PcmAudioStream stream = new PcmAudioStream(ring);
+        /** 通道代际：seek/恢复重建通道时防止旧 createHandle 回调覆盖新通道。 */
+        private final java.util.concurrent.atomic.AtomicLong channelEpoch = new java.util.concurrent.atomic.AtomicLong();
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
@@ -433,32 +435,63 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 fail("NO_CHANNEL", "客户端音频通道不可用");
                 return;
             }
+            long epoch = channelEpoch.get();
             access.createHandle(Library.Pool.STREAMING).thenAccept(created -> {
                 if (created == null) {
                     fail("NO_CHANNEL", "声音通道池已满或设备不可用");
                     return;
                 }
-                if (closed) {
+                if (closed || epoch != channelEpoch.get()) {
                     created.execute(Channel::stop);
                     return;
                 }
                 handle = created;
+                PcmAudioStream currentStream = stream;
                 created.execute(channel -> {
-                    channel.attachBufferStream(stream);
+                    channel.attachBufferStream(currentStream);
                     channel.setVolume(effectiveVolume());
                     applySpatial(channel);
                     channel.play();
                     // OpenAL 起播会立刻预取缓冲，不能再用“解码位置-环形缓冲”推算；
-                    // 真正先被听到的是起播位置本身（迟到时为跳播后的位置）
-                    anchorPresentation(startAnchorMs);
+                    // 首播锚在起播位置；seek/恢复后等目标首帧到达时在 onPcm 里重锚
+                    if (pendingSeekTargetMs < 0) {
+                        anchorPresentation(startAnchorMs);
+                    }
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                             "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B anchor={}ms",
-                            id, effectiveVolume(), bus, ring.available(), startAnchorMs);
+                            id, effectiveVolume(), bus, ring.available(),
+                            pendingSeekTargetMs < 0 ? startAnchorMs : pendingSeekTargetMs);
                 });
             }).exceptionally(t -> {
                 fail("CHANNEL_ERROR", t.toString());
                 return null;
             });
+        }
+
+        /** 丢弃旧通道与旧 stream，从指定位置重新解码并重建播放通道（seek / 恢复共用）。 */
+        private void relocate(long positionMs) {
+            pendingSeekTargetMs = positionMs;
+            pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
+            presentAnchorMs = Math.max(0, positionMs);
+            presentRunning = false;
+            PcmAudioStream oldStream = stream;
+            oldStream.markEnded();
+            synchronized (ioLock) {
+                decoder.seek(positionMs); // 内部自增代际，旧帧回调作废
+                ring.clear();
+            }
+            stream = new PcmAudioStream(ring);
+            ChannelAccess.ChannelHandle old = handle;
+            handle = null;
+            channelEpoch.incrementAndGet();
+            channelRequested.set(false);
+            if (old != null) {
+                old.execute(Channel::stop); // 清掉旧通道已排队的旧音频
+            }
+            if (started && !closed && !paused) {
+                ensureChannel();
+            }
+            report();
         }
 
         void pump() {
@@ -483,11 +516,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 return;
             }
             if (paused) {
-                // 关闭界面会触发 SoundEngine.resume()，它无条件 unpause 所有通道（包括我们的），
-                // 这里持续重申暂停状态，避免“暂停后关 UI 又继续播放”
+                // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停止
                 current.execute(channel -> {
                     if (channel.playing()) {
-                        channel.pause();
+                        channel.stop();
                     }
                 });
                 return;
@@ -516,21 +548,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (paused == value) return; // 幂等：重复 resume/pause 不重置锚点
             if (value) {
                 freezePresentation();
-            }
-            paused = value;
-            decoder.setPaused(value);
-            ChannelAccess.ChannelHandle current = handle;
-            if (current != null) {
-                current.execute(channel -> {
-                    if (value) {
-                        channel.pause();
-                    } else {
-                        channel.unpause();
-                    }
-                });
-            }
-            if (!value) {
-                anchorPresentation(presentAnchorMs);
+                paused = true;
+                decoder.setPaused(true);
+                // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
+                // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
+                ChannelAccess.ChannelHandle current = handle;
+                if (current != null) {
+                    current.execute(Channel::stop);
+                }
+            } else {
+                paused = false;
+                decoder.setPaused(false);
+                // 从冻结位置精确重定位（重连一次，换取不跳帧、无残留队列）
+                relocate(presentAnchorMs);
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",
@@ -542,27 +572,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] SEEK session={} -> {}ms (was {}ms, seekable={})",
                     id, positionMs, decoder.positionMs(), decoder.seekable());
-            pendingSeekTargetMs = positionMs;
-            pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
-            // 目标位置冻结显示，等第一帧目标附近的 PCM 到达后重新起锚
-            presentAnchorMs = Math.max(0, positionMs);
-            presentRunning = false;
-            synchronized (ioLock) {
-                decoder.seek(positionMs); // 内部自增代际
-                ring.clear();
-            }
-            stream.reset();
-            ChannelAccess.ChannelHandle current = handle;
-            if (current != null) {
-                current.execute(channel -> {
-                    channel.stop();
-                    channel.attachBufferStream(stream);
-                    channel.setVolume(effectiveVolume());
-                    applySpatial(channel);
-                    channel.play();
-                });
-            }
-            report();
+            relocate(positionMs);
         }
 
         /** 播放时钟当前位置（毫秒）；未起播时返回起始位置/0。 */
