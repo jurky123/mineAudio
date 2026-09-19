@@ -113,9 +113,6 @@ MineUI 已能承载屏幕页面（会话 / 状态 / 动作 / 组件 / 动态贴�
 7. 是否把歌词 / 队列抽象为通用“高亮列表”组件
 8. 与未来官方 HUD 规划的合并方式
 
----
-
-落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。
 
 ## 8. FR-12 客户端本地状态与动作（跨 mod 极简 API，2026-09-19 评审后确定）
 
@@ -182,3 +179,7 @@ public interface MineUiClientBridge {
   - actions：`seek` / `pause` / `resume` / `volume`
 - 页面（player.json / hud.json）在有 `local_state` 时使用 `{local.mineaudio.*}` 与
   `local:mineaudio.*` 动作；否则沿用当前服务端推送 + `SEEK/PAUSE/...` 协议回退
+
+---
+
+落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。
