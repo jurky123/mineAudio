@@ -76,12 +76,14 @@ processResources {
                         ('"action": "vol_down"')        : '"action": "local:mineaudio.volume_down"',
                         ('"action": "vol_up"')          : '"action": "local:mineaudio.volume_up"',
                         ('"text": "{state.volume}"')    : '"text": "{local.mineaudio.volume}%"',
+                        ('"spinPlaying": "{state.playing}"'): '"spinPlaying": "{local.mineaudio.playing}"',
                 ]],
                 'hud.json'   : ['hud-local.json', [
                         ('"value": "{state.percent}"')  : '"value": "{local.mineaudio.percent}"',
                         ('"playing": "{state.playing}"'): '"playing": "{local.mineaudio.playing}"',
                         ('"interpolate": true')         : '"interpolate": false',
                         ('"text": "{state.time}"')      : '"text": "{local.mineaudio.time}"',
+                        ('"spinPlaying": "{state.playing}"'): '"spinPlaying": "{local.mineaudio.playing}"',
                 ]],
         ]
         variants.each { source, spec ->

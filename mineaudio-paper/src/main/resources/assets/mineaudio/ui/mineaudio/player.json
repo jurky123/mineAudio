@@ -69,6 +69,8 @@
                   "width": 56,
                   "height": 56,
                   "radius": 28,
+                  "spin": 8.0,
+                  "spinPlaying": "{state.playing}",
                   "visible": "{state.cover_visible}"
                 },
                 {
