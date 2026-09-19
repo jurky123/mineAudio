@@ -339,6 +339,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile boolean presentRunning;
         /** 起播时真正会先被听到的媒体位置（startPosition，或迟到跳播后的位置）。 */
         private volatile long startAnchorMs;
+        private final long createdAtMs = System.currentTimeMillis();
 
         Session(String sessionId, Packets.Play play) {
             this.id = sessionId;
@@ -736,9 +737,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (target >= 0) {
                 if (Math.abs(timecodeMs - target) <= SEEK_FILTER_TOLERANCE_MS) {
                     pendingSeekTargetMs = -1;
-                    // 第一帧目标位置的 PCM：以此重锚播放时钟（暂停中不起锚）
+                    // 音频确实在目标位置：直接锚定目标，避免重连后首帧 timecode 相对化导致进度归零
                     if (!paused) {
-                        anchorPresentation(timecodeMs);
+                        anchorPresentation(target);
                         report();
                     }
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
@@ -747,7 +748,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 } else {
                     pendingSeekTargetMs = -1;
                     if (!paused) {
-                        anchorPresentation(timecodeMs);
+                        anchorPresentation(target);
                         report();
                     }
                 }
@@ -760,7 +761,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     peak = Math.max(peak, Math.abs(sample));
                 }
                 com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                        "[audio] 收到首批 PCM session={} bytes={} timecode={}ms peak={}", id, length, timecodeMs, peak);
+                        "[audio] 收到首批 PCM session={} bytes={} timecode={}ms peak={} loadMs={}",
+                        id, length, timecodeMs, peak, System.currentTimeMillis() - createdAtMs);
             }
             int offset = 0;
             while (offset < length && !closed) {
