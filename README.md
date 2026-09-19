@@ -19,6 +19,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 - 三种来源：`PACK` 资源包声音、`VANILLA` 原版声音、`NBS` 音符盒曲目（NoteBlockAPI）
 - 流媒体：`STREAM` 曲目由服务端解析直链、自研客户端播放；每玩家会话，支持同步 / 暂停 / 定位 / 音量
+- 搜索与点歌：网易搜索（标题/歌手/封面/可播放性），点歌队列每玩家上限 2 首，曲目结束后自动续播
 - 四种 Bus：`MUSIC`（每人一条）、`AMBIENT`（多层）、`SFX` / `UI`（短音效）
 - 范围：单玩家 / 全服 / 世界 / 区域 / 发声点（Emitter）
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
@@ -251,6 +252,9 @@ lines:
 /mineaudio resume [玩家]                             # 继续
 /mineaudio seek <毫秒|mm:ss> [玩家]                  # 定位，如 90000 或 1:30
 /mineaudio volume <0-100> [玩家]                     # 运行时音量
+/mineaudio search <关键词>                           # 搜索网易云（标题/歌手/封面/可播放标记）
+/mineaudio queue add|play <序号>                     # 点歌入队（每人上限默认 2 首）/ 立即播放
+/mineaudio queue list | clear                        # 查看 / 清空点歌队列
 
 /mineaudio region list
 /mineaudio region pos1 | pos2                       # 记录准星方块（5 格内）

@@ -1,7 +1,9 @@
 package com.mineaudio.playback;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +33,7 @@ import com.mineaudio.api.event.AudioPlayEvent;
 import com.mineaudio.api.event.AudioStopEvent;
 import com.mineaudio.api.event.TrackFinishedEvent;
 import com.mineaudio.api.event.TrackStartedEvent;
+import com.mineaudio.stream.search.SearchResult;
 import com.mineaudio.backend.AudioBackend;
 import com.mineaudio.backend.BackendRegistry;
 import com.mineaudio.backend.StreamBackend;
@@ -55,6 +58,10 @@ public final class AudioOrchestrator implements MineAudio {
     private final PlayerStreamStatus streamStatus;
     private final Map<UUID, PlayerAudioState> states = new HashMap<>();
     private final Map<UUID, ActiveSession> activeSessions = new LinkedHashMap<>();
+    /** 点歌队列（每人一个，天然按玩家隔离）。 */
+    private final Map<UUID, Deque<AudioTrack>> playQueues = new HashMap<>();
+    /** 玩家最近一次搜索结果（UI 与命令共用）。 */
+    private final Map<UUID, List<SearchResult>> searchResults = new HashMap<>();
     private final Map<UUID, BukkitTask> finishTasks = new HashMap<>();
 
     public AudioOrchestrator(MineAudioPlugin plugin, TrackRegistry tracks, CueRegistry cues,
@@ -151,7 +158,9 @@ public final class AudioOrchestrator implements MineAudio {
     @Override
     public void stopAll(Audience audience) {
         for (Player player : audience.players()) {
-            PlayerAudioState state = states.remove(player.getUniqueId());
+            playQueues.remove(player.getUniqueId());
+        searchResults.remove(player.getUniqueId());
+        PlayerAudioState state = states.remove(player.getUniqueId());
             if (state == null) continue;
             for (PlaybackSession playback : state.sessions()) {
                 removeFromActiveSessions(player.getUniqueId(), playback);
@@ -275,6 +284,89 @@ public final class AudioOrchestrator implements MineAudio {
         return true;
     }
 
+    // ---------- 搜索 / 点歌队列 ----------
+
+    public enum EnqueueResult {
+        ADDED,
+        FULL
+    }
+
+    public int queueLimit() {
+        return Math.max(1, plugin.getConfig().getInt("queue.max-per-player", 2));
+    }
+
+    public EnqueueResult enqueue(Player player, AudioTrack track) {
+        Deque<AudioTrack> queue = playQueues.computeIfAbsent(player.getUniqueId(),
+                ignored -> new ArrayDeque<>());
+        if (queue.size() >= queueLimit()) {
+            return EnqueueResult.FULL;
+        }
+        queue.addLast(track);
+        return EnqueueResult.ADDED;
+    }
+
+    public List<AudioTrack> queue(Player player) {
+        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
+        return queue == null ? List.of() : List.copyOf(queue);
+    }
+
+    public boolean removeFromQueue(Player player, int index) {
+        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
+        if (queue == null || index < 0 || index >= queue.size()) {
+            return false;
+        }
+        int current = 0;
+        var iterator = queue.iterator();
+        while (iterator.hasNext()) {
+            iterator.next();
+            if (current++ == index) {
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void clearQueue(Player player) {
+        playQueues.remove(player.getUniqueId());
+    }
+
+    public void setSearchResults(Player player, List<SearchResult> results) {
+        searchResults.put(player.getUniqueId(), List.copyOf(results));
+    }
+
+    public List<SearchResult> searchResults(Player player) {
+        return searchResults.getOrDefault(player.getUniqueId(), List.of());
+    }
+
+    /** 把搜索结果转换为可播放曲目（动态曲目，不进曲库）。 */
+    public static AudioTrack searchTrack(SearchResult result) {
+        return new AudioTrack(Key.key("mineaudio", "search_" + result.id()), AudioBus.MUSIC,
+                new AudioSource.Stream("mineaudio", result.source(), result.id(), null),
+                PlaybackOptions.DEFAULT,
+                new AudioMetadata(result.title(), result.artist(), result.durationMs()));
+    }
+
+    /** 立即播放（不排队），用于搜索结果的“播放”按钮。 */
+    public PlaybackSession playNow(Player player, AudioTrack track) {
+        return startPlayer(player, track, track.options(), PlaybackOrigin.API);
+    }
+
+    /** 当前曲目自然结束后自动续播队列；播放失败则继续取下一首。 */
+    private void playNextQueued(Player player) {
+        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
+        if (queue == null || queue.isEmpty() || plugin.isShuttingDown()) {
+            return;
+        }
+        AudioTrack next = queue.pollFirst();
+        PlaybackSession session = startPlayer(player, next, next.options(), PlaybackOrigin.API);
+        if (session == null) {
+            playNextQueued(player);
+        } else {
+            debug("队列续播：" + player.getName() + " -> " + next.id().asString());
+        }
+    }
+
     // ---------- 生命周期 ----------
 
     public void onJoin(Player player) {
@@ -286,6 +378,8 @@ public final class AudioOrchestrator implements MineAudio {
     }
 
     public void onQuit(Player player) {
+        playQueues.remove(player.getUniqueId());
+        searchResults.remove(player.getUniqueId());
         PlayerAudioState state = states.remove(player.getUniqueId());
         if (state != null) {
             for (PlaybackSession playback : state.sessions()) {
@@ -318,6 +412,8 @@ public final class AudioOrchestrator implements MineAudio {
         }
         activeSessions.clear();
         states.clear();
+        playQueues.clear();
+        searchResults.clear();
     }
 
     /** /mineaudio debug：列出该玩家当前会话。 */
@@ -469,6 +565,7 @@ public final class AudioOrchestrator implements MineAudio {
             Bukkit.getPluginManager().callEvent(new AudioStopEvent(player, session.track()));
         } else if (finished) {
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, session.track()));
+            playNextQueued(player);
         }
     }
 

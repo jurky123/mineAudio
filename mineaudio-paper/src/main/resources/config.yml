@@ -69,5 +69,16 @@ resolvers:
     timeout-ms: 5000
     max-concurrent: 4
 
+# 搜索（网易免签接口 + 批量 song/detail 补封面/标题/歌手）
+search:
+  enabled: true
+  # 每次搜索返回的最大结果数（1-10）
+  max-results: 6
+
+# 点歌队列（每人一个，当前曲目自然结束后自动续播）
+queue:
+  # 每位玩家的队列上限
+  max-per-player: 2
+
 # 输出更多日志，便于排查
 debug: false

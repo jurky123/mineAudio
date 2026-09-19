@@ -307,6 +307,477 @@
           "background": "#22FFFFFF",
           "children": [
             {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "children": [
+                {
+                  "type": "input",
+                  "placeholder": "搜索网易云：歌名 / 歌手",
+                  "maxLength": 40,
+                  "action": "search",
+                  "width": "68%",
+                  "height": 16
+                },
+                {
+                  "type": "text",
+                  "text": "{state.search_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.8
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch0_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch0_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch0_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch0_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch0_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch0_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue0",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch0_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play0",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch0_playable}"
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch1_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch1_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch1_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch1_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch1_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch1_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue1",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch1_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play1",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch1_playable}"
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch2_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch2_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch2_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch2_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch2_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch2_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue2",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch2_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play2",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch2_playable}"
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch3_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch3_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch3_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch3_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch3_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch3_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue3",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch3_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play3",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch3_playable}"
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch4_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch4_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch4_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch4_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch4_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch4_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue4",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch4_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play4",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch4_playable}"
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.srch5_visible}",
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.srch5_cover}",
+                  "width": 24,
+                  "height": 24,
+                  "radius": 4,
+                  "visible": "{state.srch5_hasCover}"
+                },
+                {
+                  "type": "column",
+                  "gap": 1,
+                  "width": "52%",
+                  "children": [
+                    {
+                      "type": "text",
+                      "text": "{state.srch5_name}",
+                      "color": "#FFFFFF",
+                      "scale": 0.85
+                    },
+                    {
+                      "type": "text",
+                      "text": "{state.srch5_artist}",
+                      "color": "#A0A0A0",
+                      "scale": 0.75
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": "{state.srch5_note}",
+                  "color": "#FFD54F",
+                  "scale": 0.75,
+                  "width": "14%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "点歌",
+                  "action": "srch_queue5",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch5_playable}"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "播放",
+                  "action": "srch_play5",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08,
+                  "visible": "{state.srch5_playable}"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "text": "{state.queue_title}",
+              "color": "#C0C0C0",
+              "scale": 0.9
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.q0_visible}",
+              "children": [
+                {
+                  "type": "text",
+                  "text": "{state.q0_name}",
+                  "color": "#FFFFFF",
+                  "scale": 0.85,
+                  "width": "82%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "移除",
+                  "action": "q_remove0",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "visible": "{state.q1_visible}",
+              "children": [
+                {
+                  "type": "text",
+                  "text": "{state.q1_name}",
+                  "color": "#FFFFFF",
+                  "scale": 0.85,
+                  "width": "82%"
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "移除",
+                  "action": "q_remove1",
+                  "width": 40,
+                  "height": 15,
+                  "hoverScale": 1.08
+                }
+              ]
+            },
+            {
+              "type": "row",
+              "justify": "center",
+              "children": [
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "清空队列",
+                  "action": "q_clear",
+                  "width": 64,
+                  "height": 15,
+                  "hoverScale": 1.08
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "column",
+          "gap": 3,
+          "padding": 6,
+          "radius": 6,
+          "background": "#22FFFFFF",
+          "children": [
+            {
               "type": "text",
               "text": "曲目（自己 / 全服）",
               "color": "#C0C0C0",

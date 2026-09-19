@@ -44,6 +44,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private ClientProtocolService clientProtocol;
     private AudioOrchestrator orchestrator;
     private AudioUi audioUi = new NoopAudioUi();
+    private com.mineaudio.stream.search.NeteaseSearch searchService;
     private volatile boolean shuttingDown;
     private Runnable placeholderUnregister = () -> {
     };
@@ -180,6 +181,10 @@ public final class MineAudioPlugin extends JavaPlugin {
         int maxConcurrent = getConfig().getInt("resolvers.netease.max-concurrent", 4);
         NeteaseEapiResolver netease = new NeteaseEapiResolver(new NeteaseEapiResolver.Config(
                 neteaseEnabled, credentialEnv, credentialFile, level, timeoutMs, maxConcurrent));
+        boolean searchEnabled = neteaseEnabled && getConfig().getBoolean("search.enabled", true);
+        int maxResults = getConfig().getInt("search.max-results", 6);
+        searchService = new com.mineaudio.stream.search.NeteaseSearch(
+                searchEnabled, timeoutMs, maxResults, netease::cookieHeader);
         if (neteaseEnabled) {
             getLogger().info("网易解析器已启用（凭证：" + (netease.hasCredential() ? "已配置" : "未配置，仅匿名")
                     + "，音质：" + level + "）");
@@ -213,6 +218,10 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public AudioUi audioUi() {
         return audioUi;
+    }
+
+    public com.mineaudio.stream.search.NeteaseSearch searchService() {
+        return searchService;
     }
 
     public ClientProtocolService clientProtocol() {

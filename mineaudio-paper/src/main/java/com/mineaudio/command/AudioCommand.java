@@ -44,7 +44,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 public final class AudioCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBCOMMANDS = List.of("play", "stop", "pause", "resume", "seek", "volume",
-            "region", "emitter", "ui", "hud", "reload", "debug");
+            "search", "queue", "region", "emitter", "ui", "hud", "reload", "debug");
+    private static final List<String> QUEUE_ACTIONS = List.of("add", "play", "list", "clear");
     private static final List<String> SCOPES = List.of("self", "player", "world", "global");
     private static final List<String> BUSES = List.of("MUSIC", "AMBIENT", "SFX", "UI");
     private static final List<String> REGION_ACTIONS = List.of("list", "pos1", "pos2", "create", "sphere",
@@ -79,6 +80,8 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             case "resume" -> pauseResume(sender, args, false);
             case "seek" -> seek(sender, args);
             case "volume" -> volume(sender, args);
+            case "search" -> search(sender, args);
+            case "queue" -> queue(sender, args);
             case "region" -> region(sender, args);
             case "emitter" -> emitter(sender, args);
             case "ui" -> {
@@ -161,6 +164,120 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             orchestrator.stop(audience, bus);
         }
         sender.sendMessage(Component.text("已停止 " + (bus == null ? "全部" : bus) + " 播放", NamedTextColor.GREEN));
+    }
+
+    // ---------- 搜索 / 点歌队列 ----------
+
+    private void search(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("用法：/mineaudio search <关键词>", NamedTextColor.RED));
+            return;
+        }
+        if (plugin.searchService() == null) {
+            sender.sendMessage(Component.text("搜索服务不可用（resolvers.netease.enabled=false）", NamedTextColor.RED));
+            return;
+        }
+        String keyword = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+        sender.sendMessage(Component.text("正在搜索：" + keyword + " …", NamedTextColor.GRAY));
+        plugin.searchService().search(keyword).whenComplete((results, error) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (error != null) {
+                        sender.sendMessage(Component.text("搜索失败：" + describeError(error), NamedTextColor.RED));
+                        return;
+                    }
+                    if (sender instanceof Player player) {
+                        orchestrator.setSearchResults(player, results);
+                    }
+                    if (results.isEmpty()) {
+                        sender.sendMessage(Component.text("没有找到结果", NamedTextColor.YELLOW));
+                        return;
+                    }
+                    sender.sendMessage(Component.text("搜索结果（" + results.size() + "）：", NamedTextColor.YELLOW));
+                    for (int i = 0; i < results.size(); i++) {
+                        var result = results.get(i);
+                        sender.sendMessage(Component.text("  " + (i + 1) + ". " + result.title()
+                                + " - " + result.artist() + "  [" + result.note() + "]",
+                                result.playable() ? NamedTextColor.WHITE : NamedTextColor.DARK_GRAY));
+                    }
+                    sender.sendMessage(Component.text(
+                            "点歌：/mineaudio queue add <序号>；立即播放：/mineaudio queue play <序号>",
+                            NamedTextColor.GRAY));
+                }));
+    }
+
+    private void queue(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("队列命令只能在游戏内使用", NamedTextColor.RED));
+            return;
+        }
+        String action = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "list";
+        switch (action) {
+            case "list" -> {
+                List<AudioTrack> queue = orchestrator.queue(player);
+                if (queue.isEmpty()) {
+                    sender.sendMessage(Component.text("队列为空（上限 " + orchestrator.queueLimit() + " 首）",
+                            NamedTextColor.GRAY));
+                    return;
+                }
+                sender.sendMessage(Component.text("点歌队列（" + queue.size() + "/"
+                        + orchestrator.queueLimit() + "）：", NamedTextColor.YELLOW));
+                for (int i = 0; i < queue.size(); i++) {
+                    AudioTrack track = queue.get(i);
+                    sender.sendMessage(Component.text("  " + (i + 1) + ". " + track.metadata().title()
+                            + " - " + track.metadata().author(), NamedTextColor.WHITE));
+                }
+            }
+            case "clear" -> {
+                orchestrator.clearQueue(player);
+                sender.sendMessage(Component.text("已清空点歌队列", NamedTextColor.GREEN));
+            }
+            case "add", "play" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(Component.text("用法：/mineaudio queue " + action + " <序号>", NamedTextColor.RED));
+                    return;
+                }
+                int index;
+                try {
+                    index = Integer.parseInt(args[2]) - 1;
+                } catch (NumberFormatException e) {
+                    index = -1;
+                }
+                List<com.mineaudio.stream.search.SearchResult> results = orchestrator.searchResults(player);
+                if (index < 0 || index >= results.size()) {
+                    sender.sendMessage(Component.text("序号无效（先 /mineaudio search <关键词>）", NamedTextColor.RED));
+                    return;
+                }
+                com.mineaudio.stream.search.SearchResult result = results.get(index);
+                if (!result.playable()) {
+                    sender.sendMessage(Component.text("该曲目不可播放（" + result.note() + "）", NamedTextColor.RED));
+                    return;
+                }
+                AudioTrack track = com.mineaudio.playback.AudioOrchestrator.searchTrack(result);
+                if ("play".equals(action)) {
+                    orchestrator.playNow(player, track);
+                    sender.sendMessage(Component.text("立即播放：" + result.title() + " - " + result.artist(),
+                            NamedTextColor.GREEN));
+                } else if (orchestrator.enqueue(player, track)
+                        == com.mineaudio.playback.AudioOrchestrator.EnqueueResult.FULL) {
+                    sender.sendMessage(Component.text("队列已满（每人最多 " + orchestrator.queueLimit() + " 首）",
+                            NamedTextColor.RED));
+                } else {
+                    sender.sendMessage(Component.text("已加入队列：" + result.title() + " - " + result.artist()
+                            + "（" + orchestrator.queue(player).size() + "/" + orchestrator.queueLimit() + "）",
+                            NamedTextColor.GREEN));
+                }
+            }
+            default -> sender.sendMessage(Component.text("用法：/mineaudio queue add|play <序号> | list | clear",
+                    NamedTextColor.RED));
+        }
+    }
+
+    private static String describeError(Throwable error) {
+        Throwable cause = error.getCause() == null ? error : error.getCause();
+        if (cause instanceof com.mineaudio.stream.resolve.ResolveException resolve) {
+            return resolve.kind() + "：" + resolve.getMessage();
+        }
+        return String.valueOf(cause.getMessage());
     }
 
     // ---------- 客户端控制 ----------
@@ -759,6 +876,13 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         }
         if (sub.equals("emitter")) {
             return emitterComplete(args);
+        }
+        if (sub.equals("queue")) {
+            if (args.length == 2) return match(QUEUE_ACTIONS, args[1]);
+            if (args.length == 3 && (args[1].equalsIgnoreCase("add") || args[1].equalsIgnoreCase("play"))) {
+                return match(List.of("1", "2", "3", "4", "5", "6"), args[2]);
+            }
+            return List.of();
         }
         if (sub.equals("pause") || sub.equals("resume")) {
             return args.length == 2 ? match(onlineNames(), args[1]) : List.of();

@@ -19,7 +19,11 @@
 > LOADING/BUFFERING/PLAYING/PAUSED/DRAINING/FINISHED/ERROR 单入口迁移，听感位置只由时钟写。
 > 2026-09-19 追加：共享时间轴（R8）落地——受众会话统一锚点（`Timeline`），
 > 晚加入者在 HELLO 后按当前进度补播对齐；经确认采用“松散共享”：暂停/seek 保留 per-player，不做全服统一控制。
-> 待办：搜索/队列/歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
+> 2026-09-19 追加：网易搜索 + 点歌队列落地（搜索=免签接口+批量详情补封面；队列每人上限 2 首、
+'
+'> 自然结束自动续播；UI 输入框/结果列表/队列管理；客户端无需更新）。
+'
+'> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +
 > 解析失败上报分类错误；凭证（MUSIC_U）仅从环境变量 `MINEAUDIO_NETEASE_MUSIC_U` 读取，

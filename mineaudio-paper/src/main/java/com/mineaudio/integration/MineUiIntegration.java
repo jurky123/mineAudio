@@ -29,6 +29,7 @@ import com.mineaudio.api.PlaybackState;
 import com.mineaudio.client.ClientPlaybackStateCache;
 import com.mineaudio.playback.CoverArt;
 import com.mineaudio.playback.PlaybackSession;
+import com.mineaudio.stream.search.SearchResult;
 import com.mineaudio.playback.StatusAware;
 import com.mineaudio.ui.AudioUi;
 import com.mineui.api.MineUi;
@@ -48,6 +49,8 @@ public final class MineUiIntegration implements AudioUi {
 
     private static final String APP = "mineaudio";
     private static final int TRACK_SLOTS = 6;
+    private static final int SEARCH_SLOTS = 6;
+    private static final int QUEUE_SLOTS = 2;
     private static final int AMBIENT_SLOTS = 3;
     private static final long SEEK_STEP_MS = 15_000L;
     private static final long SEEK_APPLY_TOLERANCE_MS = 2_000L;
@@ -209,6 +212,25 @@ public final class MineUiIntegration implements AudioUi {
                 session.state("note", "已停止环境音");
                 push(player, session);
             });
+            session.on("search", action -> doSearch(player, action.string("text", ""), session));
+            for (int i = 0; i < SEARCH_SLOTS; i++) {
+                final int index = i;
+                session.on("srch_queue" + i, action -> queueResult(player, index, session, false));
+                session.on("srch_play" + i, action -> queueResult(player, index, session, true));
+            }
+            for (int i = 0; i < QUEUE_SLOTS; i++) {
+                final int index = i;
+                session.on("q_remove" + i, action -> {
+                    plugin.orchestrator().removeFromQueue(player, index);
+                    session.state("note", "已从队列移除");
+                    push(player, session);
+                });
+            }
+            session.on("q_clear", action -> {
+                plugin.orchestrator().clearQueue(player);
+                session.state("note", "已清空点歌队列");
+                push(player, session);
+            });
             session.on("seek_back", action -> seekBy(player, -SEEK_STEP_MS, session));
             session.on("seek_fwd", action -> seekBy(player, SEEK_STEP_MS, session));
             session.on("seek_to", action -> seekTo(player, action.number("value", -1), session));
@@ -353,6 +375,7 @@ public final class MineUiIntegration implements AudioUi {
         }
         session.state("stream", plugin.orchestrator().streamAvailable(player)
                 ? "流媒体客户端：已连接" : "流媒体客户端：未安装（流媒体将走 fallback）");
+        pushSearch(player, session);
 
         List<AudioTrack> tracks = new ArrayList<>(plugin.trackRegistry().all());
         trackOrder.put(player.getUniqueId(), tracks.stream().map(AudioTrack::id).toList());
@@ -377,6 +400,84 @@ public final class MineUiIntegration implements AudioUi {
                 session.state("a" + i + "_name", ambient.get(i).track().id().asString());
             }
         }
+    }
+
+    private void pushSearch(Player player, MineUiSession session) {
+        List<SearchResult> results = plugin.orchestrator().searchResults(player);
+        for (int i = 0; i < SEARCH_SLOTS; i++) {
+            boolean visible = i < results.size();
+            session.state("srch" + i + "_visible", visible);
+            if (!visible) continue;
+            SearchResult result = results.get(i);
+            String cover = result.coverUrl() == null ? "" : result.coverUrl();
+            session.state("srch" + i + "_name", result.title());
+            session.state("srch" + i + "_artist", result.artist());
+            session.state("srch" + i + "_cover", cover);
+            session.state("srch" + i + "_hasCover", !cover.isBlank());
+            session.state("srch" + i + "_note", result.note());
+            session.state("srch" + i + "_playable", result.playable());
+        }
+        List<com.mineaudio.api.AudioTrack> queue = plugin.orchestrator().queue(player);
+        session.state("queue_title", "点歌队列（" + queue.size() + "/" + plugin.orchestrator().queueLimit() + "）");
+        for (int i = 0; i < QUEUE_SLOTS; i++) {
+            boolean visible = i < queue.size();
+            session.state("q" + i + "_visible", visible);
+            if (visible) {
+                var track = queue.get(i);
+                session.state("q" + i + "_name", track.metadata().title() + " - " + track.metadata().author());
+            }
+        }
+    }
+
+    private void doSearch(Player player, String keyword, MineUiSession session) {
+        if (plugin.searchService() == null) {
+            session.state("search_note", "搜索服务不可用");
+            return;
+        }
+        if (keyword == null || keyword.isBlank()) {
+            session.state("search_note", "请输入关键词");
+            return;
+        }
+        session.state("search_note", "搜索中…");
+        plugin.searchService().search(keyword).whenComplete((results, error) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (error != null) {
+                        session.state("search_note", "搜索失败：" + describeError(error));
+                        return;
+                    }
+                    plugin.orchestrator().setSearchResults(player, results);
+                    session.state("search_note", results.isEmpty() ? "没有找到结果" : "共 " + results.size() + " 条");
+                    push(player, session);
+                }));
+    }
+
+    private void queueResult(Player player, int index, MineUiSession session, boolean playNow) {
+        List<SearchResult> results = plugin.orchestrator().searchResults(player);
+        if (index < 0 || index >= results.size()) return;
+        SearchResult result = results.get(index);
+        if (!result.playable()) {
+            session.state("note", "该曲目不可播放（" + result.note() + "）");
+            return;
+        }
+        var track = com.mineaudio.playback.AudioOrchestrator.searchTrack(result);
+        if (playNow) {
+            plugin.orchestrator().playNow(player, track);
+            session.state("note", "立即播放：" + result.title());
+        } else if (plugin.orchestrator().enqueue(player, track)
+                == com.mineaudio.playback.AudioOrchestrator.EnqueueResult.FULL) {
+            session.state("note", "队列已满（每人最多 " + plugin.orchestrator().queueLimit() + " 首）");
+        } else {
+            session.state("note", "已加入队列：" + result.title());
+        }
+        push(player, session);
+    }
+
+    private static String describeError(Throwable error) {
+        Throwable cause = error.getCause() == null ? error : error.getCause();
+        if (cause instanceof com.mineaudio.stream.resolve.ResolveException resolve) {
+            return resolve.kind() + "：" + resolve.getMessage();
+        }
+        return String.valueOf(cause.getMessage());
     }
 
     private void pushProgress(Player player, MineUiSession session,

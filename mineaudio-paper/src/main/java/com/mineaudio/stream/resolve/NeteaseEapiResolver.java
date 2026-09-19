@@ -262,7 +262,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
         return trimmed.length() <= 120 ? trimmed : trimmed.substring(0, 120) + "…";
     }
 
-    private String cookieHeader() {
+    public String cookieHeader() {
         String credential = credential();
         String base = "os=android; appver=8.10.10; deviceId=MineAudioClient";
         return credential == null || credential.isBlank() ? base : base + "; MUSIC_U=" + credential;
