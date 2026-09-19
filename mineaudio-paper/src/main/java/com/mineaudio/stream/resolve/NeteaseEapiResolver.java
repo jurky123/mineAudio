@@ -238,7 +238,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
             if (song.has("al") && song.get("al").isJsonObject()) {
                 JsonObject album = song.getAsJsonObject("al");
                 if (album.has("picUrl") && !album.get("picUrl").isJsonNull()) {
-                    cover = album.get("picUrl").getAsString();
+                    cover = com.mineaudio.stream.CoverUrls.thumb(album.get("picUrl").getAsString());
                 }
             }
             return new ResolveResult(base.streamUrl(), title, artist, base.durationMs(),

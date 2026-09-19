@@ -197,4 +197,29 @@ MineAudio 已用 `image` + `{state.cover}` 展示网易封面（圆形用 `radiu
 
 ---
 
+## 10. FR-14 输入框中文（IME）支持（2026-09-19 新增，待 MineUI 修复）
+
+现象：MineUI 自绘输入框无法输入中文（IME 组词不激活）。
+
+原因：原版 `EditBox` 在聚焦变化时会调用 `Minecraft.onTextInputFocusChange(listener, focused)`，
+由 `TextInputManager` 开关 IME 并重放 preedit；自绘 `InputNode` 没有这一步。
+
+建议修复（客户端）：
+
+- 聚焦输入框：`Minecraft.getInstance().onTextInputFocusChange(listener, true)`
+  （listener 需为 `GuiEventListener`，可传 `UiScreen`），并调用
+  `textInputManager().setTextInputArea(x, y, w, h)` 将候选窗定位到输入框（GUI 坐标换算为窗口坐标）
+- 失焦 / 关闭界面：`onTextInputFocusChange(listener, false)`
+- `charTyped` 已能收到合成后的字符，无需改动
+- 验收：Windows 微软拼音下可输入并提交中文；组词进行中按回车不误触发提交
+
+## 11. FR-15 图片最近邻过滤（像素风）（2026-09-19 新增，待 MineUI 设计）
+
+MineAudio 的封面已改为 64px 缩略图（网易 `?param=64y64`）。希望 `image` 节点支持
+`"filter": "nearest"`（或 `pixelated: true`）：放大时使用最近邻采样，风格更贴像素画且不糊；
+缺省仍为线性过滤，旧客户端遇到未知字段安全忽略。
+
+
+---
+
 落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。

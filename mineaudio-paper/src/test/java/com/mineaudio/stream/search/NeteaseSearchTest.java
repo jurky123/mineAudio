@@ -46,7 +46,7 @@ class NeteaseSearchTest {
         assertEquals(1, merged.size());
         assertEquals("新标题", merged.get(0).title());
         assertEquals("新歌手", merged.get(0).artist());
-        assertEquals("https://p2.music.126.net/x/1.jpg", merged.get(0).coverUrl());
+        assertEquals("https://p2.music.126.net/x/1.jpg?param=64y64", merged.get(0).coverUrl());
         assertTrue(merged.get(0).playable());
     }
 

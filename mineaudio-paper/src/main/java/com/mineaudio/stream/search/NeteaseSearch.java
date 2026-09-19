@@ -224,7 +224,8 @@ public final class NeteaseSearch {
             }
             String cover = result.coverUrl();
             if (song.has("al") && song.get("al").isJsonObject()) {
-                cover = stringOr(song.getAsJsonObject("al"), "picUrl", cover);
+                cover = com.mineaudio.stream.CoverUrls.thumb(
+                        stringOr(song.getAsJsonObject("al"), "picUrl", cover));
             }
             merged.add(new SearchResult(result.source(), result.id(), title, artist, cover,
                     result.durationMs(), result.playable(), result.note()));
