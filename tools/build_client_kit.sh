@@ -29,7 +29,7 @@ MineAudio Client 安装说明（26.2 · v$VERSION）
 
 前置（已安装可跳过，本包不再附带）：
 - Fabric API
-- MineUI 客户端（/mineaudio ui 界面用）
+- MineUI 客户端（含 mineui-client-api，`/mineaudio ui` 与本地进度/拖动用）
 
 安装：
 1) 把 mods/ 里的 jar 放入 .minecraft/mods

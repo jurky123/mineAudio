@@ -43,6 +43,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private static final long MAX_REASONABLE_DURATION_MS = 12L * 60 * 60 * 1000;
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
+    /** 最近一次播放的会话：MineUI 本地绑定（{local.mineaudio.*}）读取的“当前曲目”。 */
+    private volatile Session current;
     private ChannelAccess channelAccess;
     private volatile boolean available;
     private MediaFirewall.Policy serverPolicy;
@@ -125,13 +127,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (existing != null) existing.stop();
         Session session = new Session(sessionId, play);
         sessions.put(sessionId, session);
+        current = session;
         session.start();
     }
 
     @Override
     public void onStop(String sessionId, Packets.Stop stop) {
         Session session = sessions.remove(sessionId);
-        if (session != null) session.stop();
+        if (session != null) {
+            session.stop();
+            if (current == session) {
+                current = sessions.isEmpty() ? null : sessions.values().iterator().next();
+            }
+        }
     }
 
     @Override
@@ -201,6 +209,78 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             session.stop();
         }
         sessions.clear();
+        current = null;
+    }
+
+    // ---------- MineUI 本地状态 / 动作（{local.mineaudio.*} / local:mineaudio.*） ----------
+
+    /** 本地状态键：position / duration / percent / time / playing / buffering / volume / visible。 */
+    public Object localState(String key) {
+        Session session = current;
+        if (session == null) return null;
+        long duration = session.knownDurationMs();
+        long position = session.presentationPositionMs();
+        return switch (key) {
+            case "position" -> position;
+            case "duration" -> duration;
+            case "percent" -> duration > 0
+                    ? Math.round(1000.0 * Math.min(position, duration) / duration) / 10.0 : 0.0;
+            case "time" -> formatTime(position) + (duration > 0 ? " / " + formatTime(duration) : "");
+            case "playing" -> session.isPresentationPlaying();
+            case "buffering" -> session.isBuffering();
+            case "volume" -> Math.round(session.currentVolume() * 100);
+            case "visible" -> duration > 0 && session.hasAudibleContent();
+            default -> null;
+        };
+    }
+
+    /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume_up / volume_down。 */
+    public boolean localAction(String action, Map<String, Object> payload) {
+        Session session = current;
+        if (session == null) return false;
+        long duration = session.knownDurationMs();
+        switch (action) {
+            case "pause" -> {
+                session.setPaused(true);
+                return true;
+            }
+            case "resume" -> {
+                session.setPaused(false);
+                return true;
+            }
+            case "seek" -> {
+                Object value = payload == null ? null : payload.get("value");
+                if (!(value instanceof Number number) || duration <= 0) return false;
+                double percent = Math.max(0, Math.min(100, number.doubleValue()));
+                session.seek(Math.round(duration * percent / 100.0));
+                return true;
+            }
+            case "seek_back" -> {
+                session.seek(Math.max(0, session.presentationPositionMs() - 15_000));
+                return true;
+            }
+            case "seek_fwd" -> {
+                long target = session.presentationPositionMs() + 15_000;
+                session.seek(duration > 0 ? Math.min(target, duration) : target);
+                return true;
+            }
+            case "volume_up" -> {
+                session.setVolume(session.currentVolume() + 0.1f);
+                return true;
+            }
+            case "volume_down" -> {
+                session.setVolume(session.currentVolume() - 0.1f);
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    private static String formatTime(long ms) {
+        long totalSeconds = Math.max(0, ms) / 1000;
+        return String.format("%d:%02d", totalSeconds / 60, totalSeconds % 60);
     }
 
     // ---------- 会话 ----------
@@ -479,6 +559,27 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             long current = presentationPositionMs();
             presentAnchorMs = current;
             presentRunning = false;
+        }
+
+        long knownDurationMs() {
+            long duration = decoder.durationMs();
+            return duration > 0 && duration <= MAX_REASONABLE_DURATION_MS ? duration : durationHintMs;
+        }
+
+        boolean isPresentationPlaying() {
+            return started && !paused && !finished && errorCode == null;
+        }
+
+        boolean isBuffering() {
+            return !paused && !finished && errorCode == null && (!started || pendingSeekTargetMs >= 0);
+        }
+
+        float currentVolume() {
+            return volume;
+        }
+
+        boolean hasAudibleContent() {
+            return errorCode == null && !finished;
         }
 
         void setVolume(float value) {

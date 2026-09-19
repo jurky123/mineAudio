@@ -51,8 +51,20 @@ public class MineAudioFabricClient implements ClientModInitializer {
             ProtocolClient.get().tick(System.nanoTime() / 1_000_000);
         });
 
+        registerLocalBridge();
+
         LOGGER.info("MineAudio Client {} 初始化完成（26.2，流媒体{}）",
                 version(), AUDIO.available() ? "可用" : "不可用");
+    }
+
+    /** MineUI 客户端本地 API：注册 {local.mineaudio.*} 与 local:mineaudio.*；api mod 缺失时惰性降级。 */
+    private static void registerLocalBridge() {
+        try {
+            MineAudioLocalBridge.register(AUDIO);
+            LOGGER.info("MineUI 本地状态/动作已注册（命名空间 mineaudio）");
+        } catch (Throwable t) {
+            LOGGER.info("MineUI 客户端 API 不可用，本地绑定关闭（界面走服务端推送回退）：{}", t.toString());
+        }
     }
 
     public static String version() {

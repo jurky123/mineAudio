@@ -58,7 +58,9 @@ public final class MineUiIntegration implements AudioUi {
     private final MineAudioPlugin plugin;
     private final MineUi api;
     private final JsonObject page;
+    private final JsonObject pageLocal;
     private final JsonObject hudPage;
+    private final JsonObject hudPageLocal;
     private final Map<UUID, MineUiSession> sessions = new HashMap<>();
     private final Map<UUID, MineUiSession> hudSessions = new HashMap<>();
     private final Map<UUID, BukkitTask> refreshers = new HashMap<>();
@@ -73,7 +75,9 @@ public final class MineUiIntegration implements AudioUi {
         this.plugin = plugin;
         this.api = MineUiProvider.get();
         this.page = load("player");
+        this.pageLocal = load("player-local");
         this.hudPage = load("hud");
+        this.hudPageLocal = load("hud-local");
         if (api != null) {
             api.onAction(plugin, "open_ui", action -> open(action.player()));
             api.onAction(plugin, "toggle_hud", action -> toggleHud(action.player()));
@@ -100,7 +104,12 @@ public final class MineUiIntegration implements AudioUi {
 
     @Override
     public boolean hudSupported(Player player) {
-        return available() && hudPage != null && api.supportsHud(player);
+        return available() && (hudPage != null || hudPageLocal != null) && api.supportsHud(player);
+    }
+
+    /** 客户端是否支持 MineUI 本地状态/动作（装 MineAudio Client + mineui-client-api 时）。 */
+    private boolean hasLocalState(Player player) {
+        return api != null && api.capabilities(player).contains("local_state");
     }
 
     @Override
@@ -114,13 +123,17 @@ public final class MineUiIntegration implements AudioUi {
             plugin.getLogger().info("[ui] " + player.getName() + " HUD 已关闭");
             return false;
         }
-        MineUiSession hud = api.openHud(plugin, player, APP, "hud", hudPage,
+        boolean local = hasLocalState(player);
+        JsonObject definition = local && hudPageLocal != null ? hudPageLocal : hudPage;
+        String view = local && hudPageLocal != null ? "hud-local" : "hud";
+        MineUiSession hud = api.openHud(plugin, player, APP, view, definition,
                 new HudLayout("top_left", 4f, 4f, 1f));
         hudSessions.put(playerId, hud);
         pushHud(player);
         hud.snapshot();
         startHudRefresher(player);
-        plugin.getLogger().info("[ui] " + player.getName() + " HUD 已开启");
+        plugin.getLogger().info("[ui] " + player.getName() + " HUD 已开启（"
+                + (local ? "本地绑定" : "服务端推送") + "）");
         return true;
     }
 
@@ -142,7 +155,10 @@ public final class MineUiIntegration implements AudioUi {
         try {
             if (!api.hasClient(player) || !api.supportsServerUi(player)) return false;
             close(player);
-            MineUiSession session = api.open(plugin, player, APP, "player", page);
+            boolean local = hasLocalState(player);
+            JsonObject definition = local && pageLocal != null ? pageLocal : page;
+            String view = local && pageLocal != null ? "player-local" : "player";
+            MineUiSession session = api.open(plugin, player, APP, view, definition);
             sessions.put(player.getUniqueId(), session);
             session.onClose(() -> sessions.remove(player.getUniqueId()));
             session.on("close", action -> close(player));
@@ -192,7 +208,8 @@ public final class MineUiIntegration implements AudioUi {
             session.snapshot();
             startRefresher(player);
             declareKeybinds(player);
-            plugin.getLogger().info("[ui] 已向 " + player.getName() + " 下发音乐界面");
+            plugin.getLogger().info("[ui] 已向 " + player.getName() + " 下发音乐界面（"
+                    + (local ? "本地绑定" : "服务端推送") + "）");
             return true;
         } catch (Throwable t) {
             broken = true;
