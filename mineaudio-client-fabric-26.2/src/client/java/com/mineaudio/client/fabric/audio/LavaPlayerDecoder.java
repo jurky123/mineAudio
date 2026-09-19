@@ -38,6 +38,8 @@ public final class LavaPlayerDecoder implements AudioDecoder {
     private volatile boolean finished;
     private volatile boolean failed;
     private volatile long durationMs;
+    /** 解码代际：seek 时自增，帧在读取前打标，用于丢弃跨 seek 的旧帧。 */
+    private final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
 
     private static AudioPlayerManager createManager() {
         DefaultAudioPlayerManager manager = new DefaultAudioPlayerManager();
@@ -132,6 +134,8 @@ public final class LavaPlayerDecoder implements AudioDecoder {
                 AudioPlayer p = player;
                 if (p == null) break;
                 AudioFrame frame;
+                // 先取代际再 provide：provide 期间发生的 seek 会让该帧按旧代际丢弃
+                long frameGeneration = generation.get();
                 try {
                     frame = p.provide(20, TimeUnit.MILLISECONDS);
                 } catch (TimeoutException e) {
@@ -150,7 +154,7 @@ public final class LavaPlayerDecoder implements AudioDecoder {
                 }
                 Sink current = sink;
                 if (current != null) {
-                    current.onPcm(frame.getData(), frame.getDataLength(), frame.getTimecode());
+                    current.onPcm(frameGeneration, frame.getData(), frame.getDataLength(), frame.getTimecode());
                 }
             }
         } catch (Throwable t) {
@@ -182,10 +186,16 @@ public final class LavaPlayerDecoder implements AudioDecoder {
 
     @Override
     public void seek(long positionMs) {
+        generation.incrementAndGet();
         AudioTrack t = track;
         if (t != null && t.isSeekable()) {
             t.setPosition(Math.max(0, positionMs));
         }
+    }
+
+    /** 当前解码代际；Sink 收到帧后据此判断是否已被 seek 作废。 */
+    public long generation() {
+        return generation.get();
     }
 
     @Override

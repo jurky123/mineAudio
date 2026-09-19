@@ -13,6 +13,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import com.mineaudio.MineAudioPlugin;
+import com.mineaudio.playback.AudioOrchestrator;
 import com.mineaudio.protocol.Envelope;
 import com.mineaudio.protocol.PacketType;
 import com.mineaudio.protocol.Packets;
@@ -158,6 +159,17 @@ public final class ClientProtocolService {
             return;
         }
         stateCache.update(player, envelope.session(), envelope.revision(), state);
+        // 客户端终态驱动服务端会话收尾（STREAM 以客户端输出耗尽为准，定时器只兜底）
+        if ("FINISHED".equals(state.state()) || "ERROR".equals(state.state())) {
+            AudioOrchestrator orchestrator = plugin.orchestrator();
+            if (orchestrator != null) {
+                Packets.State.Error error = state.error();
+                orchestrator.onClientTerminal(player, envelope.session(),
+                        "FINISHED".equals(state.state()),
+                        error == null ? null : error.code(),
+                        error == null ? null : error.message());
+            }
+        }
         if (plugin.debug()) {
             plugin.getLogger().info("[client] <- " + player.getName() + " STATE session="
                     + envelope.session() + " state=" + state.state() + " pos=" + state.positionMs()

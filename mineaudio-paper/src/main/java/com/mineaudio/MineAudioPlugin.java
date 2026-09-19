@@ -44,8 +44,14 @@ public final class MineAudioPlugin extends JavaPlugin {
     private ClientProtocolService clientProtocol;
     private AudioOrchestrator orchestrator;
     private AudioUi audioUi = new NoopAudioUi();
+    private volatile boolean shuttingDown;
     private Runnable placeholderUnregister = () -> {
     };
+
+    /** 插件正在停用：异步解析/调度回调据此拒绝过期结果。 */
+    public boolean isShuttingDown() {
+        return shuttingDown;
+    }
 
     @Override
     public void onEnable() {
@@ -89,16 +95,18 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        shuttingDown = true;
         MineAudioProvider.unregister();
         placeholderUnregister.run();
-        audioUi.shutdown();
-        if (clientProtocol != null) {
-            clientProtocol.unregister();
-        }
+        // 先停调度与实际播放（此时消息通道仍可用，能发出 STOP），最后再注销协议通道
         regionManager.stop();
         emitterManager.stop();
         if (orchestrator != null) {
             orchestrator.shutdown();
+        }
+        audioUi.shutdown();
+        if (clientProtocol != null) {
+            clientProtocol.unregister();
         }
         getLogger().info("MineAudio 已停用");
     }

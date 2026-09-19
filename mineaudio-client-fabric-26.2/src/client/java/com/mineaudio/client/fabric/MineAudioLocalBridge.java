@@ -13,8 +13,11 @@ final class MineAudioLocalBridge {
     }
 
     static void register(ClientAudioManager audio) {
-        MineUiClientBridge.get().register("mineaudio",
+        MineUiClientBridge bridge = MineUiClientBridge.get();
+        bridge.register("mineaudio",
                 audio::localState,
                 audio::localAction);
+        // 业务能力位：服务端据此确认“MineAudio 本地控制”可用（local_state 只说明有本地提供者）
+        bridge.declareCapability("mineaudio_local_v1");
     }
 }

@@ -16,14 +16,14 @@ class ResolvingPlaybackHandleTest {
 
     @Test
     void pendingNoteBeforeAttach() {
-        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle(java.util.UUID.randomUUID());
         assertEquals(PlaybackState.PENDING, handle.state());
         assertEquals("正在解析音源…", handle.statusNote());
     }
 
     @Test
     void failedNoteCarriesKindAndMessage() {
-        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle(java.util.UUID.randomUUID());
         handle.fail("NOT_PLAYABLE", "无版权");
         assertEquals(PlaybackState.ERROR, handle.state());
         assertTrue(handle.statusNote().contains("NOT_PLAYABLE"));
@@ -32,7 +32,7 @@ class ResolvingPlaybackHandleTest {
 
     @Test
     void delegatesNoteAndPendingOperations() {
-        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle(java.util.UUID.randomUUID());
         handle.pause();
         handle.seek(Duration.ofSeconds(30));
         handle.setVolume(0.5f);
@@ -49,7 +49,7 @@ class ResolvingPlaybackHandleTest {
 
     @Test
     void cancelledBeforeAttachStopsDelegate() {
-        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle(java.util.UUID.randomUUID());
         handle.stop();
         FakeHandle fake = new FakeHandle();
         handle.attach(fake);

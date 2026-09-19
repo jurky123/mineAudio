@@ -7,7 +7,8 @@ package com.mineaudio.client.decode;
 public interface AudioDecoder extends AutoCloseable {
 
     interface Sink {
-        void onPcm(byte[] data, int length, long timecodeMs);
+        /** generation 为该帧所属解码任务的代际，seek 后旧代际帧应被丢弃。 */
+        void onPcm(long generation, byte[] data, int length, long timecodeMs);
 
         void onEnded();
 

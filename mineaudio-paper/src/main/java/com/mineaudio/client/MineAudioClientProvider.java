@@ -77,17 +77,19 @@ public final class MineAudioClientProvider implements StreamProvider {
     public PlaybackHandle play(Player player, StreamPlaybackRequest request) {
         if (!available(player)) return NoopPlaybackHandle.stopped();
         AudioSource.Stream stream = request.source();
-        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle();
+        ResolvingPlaybackHandle handle = new ResolvingPlaybackHandle(request.sessionId());
         ResolveRequest resolveRequest = new ResolveRequest(stream.source(), stream.id(), stream.uri());
-        resolvers.resolve(resolveRequest).whenComplete((result, error) ->
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    if (handle.cancelled()) return;
-                    if (error != null) {
-                        fallback(player, request, handle, error);
-                        return;
-                    }
-                    handle.attach(sendPlay(player, request, result));
-                }));
+        resolvers.resolve(resolveRequest).whenComplete((result, error) -> {
+            if (handle.cancelled() || plugin.isShuttingDown()) return;
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (handle.cancelled() || plugin.isShuttingDown()) return;
+                if (error != null) {
+                    fallback(player, request, handle, error);
+                    return;
+                }
+                handle.attach(sendPlay(player, request, result));
+            });
+        });
         return handle;
     }
 

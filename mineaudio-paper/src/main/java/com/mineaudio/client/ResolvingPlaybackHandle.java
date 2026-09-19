@@ -11,10 +11,11 @@ import com.mineaudio.playback.StatusAware;
 /**
  * 异步解析期间占位句柄：解析完成后把操作转发给真正的句柄（客户端会话或 Legacy）。
  * 解析完成前的暂停/定位/音量会被记住并在挂接时补发。
+ * 使用与 PLAY 相同的 sessionId，保证服务端按句柄 ID 能查到对应会话快照。
  */
 final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware {
 
-    private final UUID id = UUID.randomUUID();
+    private final UUID id;
     private final AtomicReference<PlaybackHandle> delegate = new AtomicReference<>();
     private volatile boolean cancelled;
     private volatile boolean failed;
@@ -23,6 +24,10 @@ final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware {
     private volatile Boolean pendingPaused;
     private volatile Duration pendingSeek;
     private volatile Float pendingVolume;
+
+    ResolvingPlaybackHandle(UUID sessionId) {
+        this.id = sessionId;
+    }
 
     @Override
     public UUID id() {

@@ -127,7 +127,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (existing != null) existing.stop();
         Session session = new Session(sessionId, play);
         sessions.put(sessionId, session);
-        current = session;
+        // 本地控件只针对 MUSIC；环境音/音效不得抢占“当前播放器”
+        if (current == null || "MUSIC".equalsIgnoreCase(play.bus())) {
+            current = session;
+        }
         session.start();
     }
 
@@ -137,7 +140,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (session != null) {
             session.stop();
             if (current == session) {
-                current = sessions.isEmpty() ? null : sessions.values().iterator().next();
+                current = sessions.values().stream()
+                        .filter(s -> "MUSIC".equalsIgnoreCase(s.bus))
+                        .findFirst()
+                        .orElseGet(() -> sessions.isEmpty() ? null : sessions.values().iterator().next());
             }
         }
     }
@@ -301,7 +307,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
         /** seek 代际：seek 后旧解码回调即使已在途中也会被丢弃，避免旧 PCM 污染新位置。 */
-        private final java.util.concurrent.atomic.AtomicLong generation = new java.util.concurrent.atomic.AtomicLong();
+        /** seek 与 PCM 写入的串行化锁：保证“检查代际+写入”与“seek+清空”互斥。 */
+        private final Object ioLock = new Object();
+        private volatile boolean draining;
+        private volatile long drainDeadlineAt;
         private static final long SEEK_FILTER_TOLERANCE_MS = 1500;
         private static final long SEEK_FILTER_TIMEOUT_MS = 3000;
 
@@ -453,6 +462,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 current.execute(channel -> channel.setVolume(effective));
             }
             if (current == null) return;
+            if (!paused && draining && System.currentTimeMillis() >= drainDeadlineAt) {
+                finishNow();
+                return;
+            }
             if (paused) {
                 // 关闭界面会触发 SoundEngine.resume()，它无条件 unpause 所有通道（包括我们的），
                 // 这里持续重申暂停状态，避免“暂停后关 UI 又继续播放”
@@ -484,6 +497,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         void setPaused(boolean value) {
+            if (paused == value) return; // 幂等：重复 resume/pause 不重置锚点
             if (value) {
                 freezePresentation();
             }
@@ -512,14 +526,15 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] SEEK session={} -> {}ms (was {}ms, seekable={})",
                     id, positionMs, decoder.positionMs(), decoder.seekable());
-            generation.incrementAndGet();
             pendingSeekTargetMs = positionMs;
             pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
             // 目标位置冻结显示，等第一帧目标附近的 PCM 到达后重新起锚
             presentAnchorMs = Math.max(0, positionMs);
             presentRunning = false;
-            decoder.seek(positionMs);
-            ring.clear();
+            synchronized (ioLock) {
+                decoder.seek(positionMs); // 内部自增代际
+                ring.clear();
+            }
             stream.reset();
             ChannelAccess.ChannelHandle current = handle;
             if (current != null) {
@@ -596,12 +611,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             closed = true;
             decoder.close();
             stream.markEnded();
-            String local = localUrl;
-            localUrl = null;
-            SecureMediaGateway gw = gateway;
-            if (local != null && gw != null) {
-                gw.unregister(local);
-            }
+            unregisterGateway();
             ChannelAccess.ChannelHandle current = handle;
             handle = null;
             if (current != null) {
@@ -652,6 +662,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 state = "FINISHED";
             } else if (paused) {
                 state = "PAUSED";
+            } else if (draining) {
+                state = "PLAYING"; // 解码已结束，输出缓冲仍在播放
             } else if (!started) {
                 state = "BUFFERING";
             } else if (decoder.durationMs() > 0 || decoder.positionMs() > 0) {
@@ -690,22 +702,28 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         // ---------- AudioDecoder.Sink ----------
 
         @Override
-        public void onPcm(byte[] data, int length, long timecodeMs) {
-            long gen = generation.get();
+        public void onPcm(long frameGeneration, byte[] data, int length, long timecodeMs) {
+            if (frameGeneration != decoder.generation()) {
+                return; // 该帧属于 seek 前的解码任务
+            }
             long target = pendingSeekTargetMs;
             if (target >= 0) {
                 if (Math.abs(timecodeMs - target) <= SEEK_FILTER_TOLERANCE_MS) {
                     pendingSeekTargetMs = -1;
-                    // 第一帧目标位置的 PCM：以此重锚播放时钟
-                    anchorPresentation(timecodeMs);
-                    report();
+                    // 第一帧目标位置的 PCM：以此重锚播放时钟（暂停中不起锚）
+                    if (!paused) {
+                        anchorPresentation(timecodeMs);
+                        report();
+                    }
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
                     // seek 后 LavaPlayer 内部仍在吐旧位置帧：丢弃，等目标附近的帧
                     return;
                 } else {
                     pendingSeekTargetMs = -1;
-                    anchorPresentation(timecodeMs);
-                    report();
+                    if (!paused) {
+                        anchorPresentation(timecodeMs);
+                        report();
+                    }
                 }
             }
             boolean first = firstPcm.compareAndSet(false, true);
@@ -720,10 +738,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             }
             int offset = 0;
             while (offset < length && !closed) {
-                if (generation.get() != gen) {
-                    return;
+                int written;
+                synchronized (ioLock) {
+                    if (frameGeneration != decoder.generation()) {
+                        return;
+                    }
+                    written = ring.write(data, offset, length - offset);
                 }
-                int written = ring.write(data, offset, length - offset);
                 if (written == 0) {
                     try {
                         Thread.sleep(5);
@@ -739,10 +760,31 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onEnded() {
+            // 解码结束但输出缓冲还有音频：先进入 DRAINING，等播放时钟走完再 FINISHED
+            if (finished || draining) return;
+            draining = true;
+            drainDeadlineAt = System.currentTimeMillis() + ring.available() / BYTES_PER_MS + 800;
+            report();
+        }
+
+        /** 输出耗尽后的最终收尾：冻结时钟、释放网关资源、上报 FINISHED。 */
+        private void finishNow() {
+            if (finished) return;
+            draining = false;
             freezePresentation();
             finished = true;
             stream.markEnded();
+            unregisterGateway();
             report();
+        }
+
+        private void unregisterGateway() {
+            String local = localUrl;
+            localUrl = null;
+            SecureMediaGateway gw = gateway;
+            if (local != null && gw != null) {
+                gw.unregister(local);
+            }
         }
 
         @Override

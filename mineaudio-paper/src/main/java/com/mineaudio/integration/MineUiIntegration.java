@@ -52,7 +52,7 @@ public final class MineUiIntegration implements AudioUi {
     private static final long SEEK_APPLY_TOLERANCE_MS = 2_000L;
     private static final long SEEK_TIMEOUT_MS = 5_000L;
 
-    private record PendingSeek(long targetMs, boolean playing, long sentAtMs) {
+    private record PendingSeek(String sessionId, long targetMs, boolean playing, long sentAtMs) {
     }
 
     private final MineAudioPlugin plugin;
@@ -68,6 +68,8 @@ public final class MineUiIntegration implements AudioUi {
     private final Map<UUID, List<Key>> trackOrder = new HashMap<>();
     private final Map<UUID, Float> volumes = new HashMap<>();
     private final Map<UUID, PendingSeek> pendingSeeks = new HashMap<>();
+    private final Map<UUID, Boolean> pageLocalModes = new HashMap<>();
+    private final Map<UUID, Boolean> hudLocalModes = new HashMap<>();
     private final Map<UUID, String> lastStatus = new HashMap<>();
     private boolean broken;
 
@@ -107,9 +109,18 @@ public final class MineUiIntegration implements AudioUi {
         return available() && (hudPage != null || hudPageLocal != null) && api.supportsHud(player);
     }
 
-    /** 客户端是否支持 MineUI 本地状态/动作（装 MineAudio Client + mineui-client-api 时）。 */
+    /** 客户端是否支持 MineAudio 本地控制（MineUI 本地绑定 + MineAudio 客户端声明业务能力位）。 */
     private boolean hasLocalState(Player player) {
-        return api != null && api.capabilities(player).contains("local_state");
+        if (api == null) return false;
+        var caps = api.capabilities(player);
+        return caps.contains("local_state") && caps.contains("mineaudio_local_v1");
+    }
+
+    /** 当前曲目由自研客户端播放时才用本地绑定页面；NBS/PACK 等继续走服务端控制。 */
+    private boolean useLocalPage(Player player) {
+        if (!hasLocalState(player)) return false;
+        PlaybackSession music = plugin.orchestrator().currentMusic(player);
+        return music != null && "stream".equals(music.backend());
     }
 
     @Override
@@ -129,6 +140,7 @@ public final class MineUiIntegration implements AudioUi {
         MineUiSession hud = api.openHud(plugin, player, APP, view, definition,
                 new HudLayout("top_left", 4f, 4f, 1f));
         hudSessions.put(playerId, hud);
+        hudLocalModes.put(playerId, local && hudPageLocal != null);
         pushHud(player);
         hud.snapshot();
         startHudRefresher(player);
@@ -155,11 +167,12 @@ public final class MineUiIntegration implements AudioUi {
         try {
             if (!api.hasClient(player) || !api.supportsServerUi(player)) return false;
             close(player);
-            boolean local = hasLocalState(player);
+            boolean local = useLocalPage(player);
             JsonObject definition = local && pageLocal != null ? pageLocal : page;
             String view = local && pageLocal != null ? "player-local" : "player";
             MineUiSession session = api.open(plugin, player, APP, view, definition);
             sessions.put(player.getUniqueId(), session);
+            pageLocalModes.put(player.getUniqueId(), local && pageLocal != null);
             session.onClose(() -> sessions.remove(player.getUniqueId()));
             session.on("close", action -> close(player));
             session.on("refresh", action -> push(player, session));
@@ -239,6 +252,8 @@ public final class MineUiIntegration implements AudioUi {
         }
         volumes.remove(playerId);
         pendingSeeks.remove(playerId);
+        pageLocalModes.remove(playerId);
+        hudLocalModes.remove(playerId);
         lastStatus.remove(playerId);
     }
 
@@ -261,12 +276,24 @@ public final class MineUiIntegration implements AudioUi {
         trackOrder.clear();
         volumes.clear();
         pendingSeeks.clear();
+        pageLocalModes.clear();
+        hudLocalModes.clear();
         lastStatus.clear();
     }
 
     // ---------- 状态推送 ----------
 
     private void push(Player player, MineUiSession session) {
+        // 播放后端变化时切换“本地绑定 / 服务端推送”页面（打开时只决定一次是不够的）
+        Boolean mode = pageLocalModes.get(player.getUniqueId());
+        if (mode != null && mode != useLocalPage(player)) {
+            pageLocalModes.remove(player.getUniqueId());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) open(player);
+            });
+            return;
+        }
+        boolean localPage = Boolean.TRUE.equals(mode);
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         ClientPlaybackStateCache.Snapshot progress = music == null ? null : snapshotOf(player, music);
         String status = "";
@@ -298,10 +325,12 @@ public final class MineUiIntegration implements AudioUi {
         session.state("status", status);
         session.state("status_visible", !status.isBlank());
         if (music != null) {
-            resolvePendingSeek(player, session, progress);
+            resolvePendingSeek(player, session, music, progress);
         }
-        pushProgress(player, session, music == null ? null : progress);
-        session.state("volume", Math.round(volumeOf(player) * 100) + "%");
+        pushProgress(player, session, music == null ? null : progress, localPage);
+        if (!localPage) {
+            session.state("volume", Math.round(volumeOf(player) * 100) + "%");
+        }
         session.state("stream", plugin.orchestrator().streamAvailable(player)
                 ? "流媒体客户端：已连接" : "流媒体客户端：未安装（流媒体将走 fallback）");
 
@@ -328,10 +357,15 @@ public final class MineUiIntegration implements AudioUi {
                 session.state("a" + i + "_name", ambient.get(i).track().id().asString());
             }
         }
-        pushHud(player);
     }
 
-    private void pushProgress(Player player, MineUiSession session, ClientPlaybackStateCache.Snapshot progress) {
+    private void pushProgress(Player player, MineUiSession session,
+                              ClientPlaybackStateCache.Snapshot progress, boolean localPage) {
+        if (localPage) {
+            // 本地绑定页面自行逐帧读取 position/percent/time/playing，服务端不再重复推送
+            session.state("progress_visible", progress != null && progress.durationMs() > 0);
+            return;
+        }
         long duration = progress == null ? 0 : progress.durationMs();
         PendingSeek pending = pendingSeeks.get(player.getUniqueId());
         boolean hasProgress = duration > 0 && (progress != null || pending != null);
@@ -382,7 +416,7 @@ public final class MineUiIntegration implements AudioUi {
             hud.state("status", "");
             hud.state("status_visible", false);
         }
-        pushProgress(player, hud, progress);
+        pushProgress(player, hud, progress, Boolean.TRUE.equals(hudLocalModes.get(player.getUniqueId())));
     }
 
     private void playTrack(Player player, int index, boolean global) {
@@ -455,12 +489,20 @@ public final class MineUiIntegration implements AudioUi {
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         ClientPlaybackStateCache.Snapshot snapshot = music == null ? null : snapshotOf(player, music);
         boolean playing = snapshot != null && snapshot.playing();
-        pendingSeeks.put(player.getUniqueId(), new PendingSeek(targetMs, playing, System.currentTimeMillis()));
+        pendingSeeks.put(player.getUniqueId(), new PendingSeek(
+                music == null ? "" : music.handle().id().toString(),
+                targetMs, playing, System.currentTimeMillis()));
     }
 
-    private void resolvePendingSeek(Player player, MineUiSession session, ClientPlaybackStateCache.Snapshot progress) {
+    private void resolvePendingSeek(Player player, MineUiSession session, PlaybackSession music,
+                                    ClientPlaybackStateCache.Snapshot progress) {
         PendingSeek pending = pendingSeeks.get(player.getUniqueId());
         if (pending == null) return;
+        // 换曲后旧 seek 不得用新会话的位置确认
+        if (!pending.sessionId().equals(music.handle().id().toString())) {
+            pendingSeeks.remove(player.getUniqueId());
+            return;
+        }
         long position = progress == null ? -1 : progress.displayPositionMs();
         if (position >= 0 && Math.abs(position - pending.targetMs()) <= SEEK_APPLY_TOLERANCE_MS) {
             pendingSeeks.remove(player.getUniqueId());
@@ -488,12 +530,8 @@ public final class MineUiIntegration implements AudioUi {
 
     private ClientPlaybackStateCache.Snapshot snapshotOf(Player player, PlaybackSession music) {
         if (plugin.clientProtocol() == null) return null;
-        ClientPlaybackStateCache cache = plugin.clientProtocol().stateCache();
-        ClientPlaybackStateCache.Snapshot snapshot = cache.snapshot(player, music.handle().id().toString());
-        if (snapshot == null && music.track().primary() instanceof AudioSource.Stream) {
-            snapshot = cache.latest(player);
-        }
-        return snapshot;
+        // 句柄 ID 与 PLAY/STATE 的 sessionId 一致，按会话精确查询；不再回退 latest（可能取到环境音）
+        return plugin.clientProtocol().stateCache().snapshot(player, music.handle().id().toString());
     }
 
     private void notifyStatus(Player player, String status) {

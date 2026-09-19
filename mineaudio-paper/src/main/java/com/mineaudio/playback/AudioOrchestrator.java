@@ -299,6 +299,13 @@ public final class AudioOrchestrator implements MineAudio {
         for (BukkitTask task : finishTasks.values()) {
             task.cancel();
         }
+        // 停掉所有玩家会话（含区域/世界层），再清空状态
+        for (PlayerAudioState state : states.values()) {
+            for (PlaybackSession playback : state.sessions()) {
+                cancelFinish(playback.id());
+                playback.handle().stop();
+            }
+        }
         finishTasks.clear();
         for (ActiveSession session : activeSessions.values()) {
             for (PlaybackSession playback : session.players.values()) {
@@ -419,6 +426,29 @@ public final class AudioOrchestrator implements MineAudio {
         return playback;
     }
 
+    /** 客户端上报终态：幂等收尾会话；FINISHED 走 TrackFinishedEvent，ERROR 走 AudioStopEvent。 */
+    public void onClientTerminal(Player player, String sessionId, boolean finished,
+                                 String errorCode, String message) {
+        if (sessionId == null) return;
+        PlayerAudioState state = states.get(player.getUniqueId());
+        if (state == null) return;
+        PlaybackSession session = state.sessions().stream()
+                .filter(s -> s.handle().id().toString().equals(sessionId))
+                .findFirst().orElse(null);
+        if (session == null) return;
+        cancelFinish(session.id());
+        state.remove(session);
+        removeFromActiveSessions(player.getUniqueId(), session);
+        session.handle().stop();
+        if (errorCode != null) {
+            plugin.getLogger().warning("[client] " + player.getName() + " 会话 " + sessionId
+                    + " 播放失败：" + errorCode + (message == null ? "" : " " + message));
+            Bukkit.getPluginManager().callEvent(new AudioStopEvent(player, session.track()));
+        } else if (finished) {
+            Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, session.track()));
+        }
+    }
+
     private void scheduleFinish(Player player, PlaybackSession playback) {
         if (playback.options().loop()) return;
         long duration = playback.track().metadata().durationMs();
@@ -429,7 +459,10 @@ public final class AudioOrchestrator implements MineAudio {
             }
         }
         if (duration <= 0) return;
-        long ticks = Math.max(1, duration / 50);
+        // STREAM 以客户端输出耗尽的终态为准，这里只做断联/状态丢失的兜底
+        long ticks = "stream".equals(playback.backend())
+                ? Math.max(1, (duration + 10 * 60_000L) / 50)
+                : Math.max(1, duration / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             finishTasks.remove(playback.id());
             PlayerAudioState state = states.get(player.getUniqueId());
