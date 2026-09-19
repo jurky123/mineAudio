@@ -18,6 +18,8 @@ import com.mineaudio.protocol.ProtocolLimits;
  */
 public final class ProtocolClient {
 
+    private static final System.Logger LOG = System.getLogger("MineAudio");
+
     public interface Transport {
         void send(byte[] data);
     }
@@ -65,6 +67,9 @@ public final class ProtocolClient {
     private int pingIntervalMs = 10000;
     private int reportIntervalMs = 1000;
     private long lastStateReportAt;
+    private Packets.Hello hello;
+    private long lastHelloAt;
+    private int helloAttempts;
 
     private ProtocolClient() {
     }
@@ -112,8 +117,10 @@ public final class ProtocolClient {
         this.serverInfo = null;
         this.lastPingAt = 0;
         this.lastStateReportAt = 0;
+        this.helloAttempts = 0;
+        this.lastHelloAt = 0;
         this.clock.reset();
-        Packets.Hello hello = new Packets.Hello(modVersion, minecraft, locale,
+        this.hello = new Packets.Hello(modVersion, minecraft, locale,
                 List.copyOf(capabilities), List.copyOf(formats));
         send(PacketType.HELLO, ProtocolCodec.data(hello));
     }
@@ -131,7 +138,15 @@ public final class ProtocolClient {
             lastPingAt = nowMs;
             send(PacketType.PING, ProtocolCodec.data(new Packets.Ping(clock.monotonicMs())));
         }
-        if (connected && nowMs - lastStateReportAt >= reportIntervalMs) {
+        // 握手重试：ACK 丢失时（网络抖动/服务端延迟）保证能力注册与状态上报不至于整局失效
+        if (!connected && hello != null && helloAttempts < 5 && nowMs - lastHelloAt >= 2000) {
+            lastHelloAt = nowMs;
+            helloAttempts++;
+            LOG.log(System.Logger.Level.INFO, "尚未收到 HELLO_ACK，重发握手（第 " + helloAttempts + " 次）");
+            send(PacketType.HELLO, ProtocolCodec.data(hello));
+        }
+        // STATE 不依赖握手完成：服务端按 session 更新缓存，不要求注册状态
+        if (nowMs - lastStateReportAt >= reportIntervalMs) {
             lastStateReportAt = nowMs;
             listener.onTickReport();
         }
@@ -181,10 +196,12 @@ public final class ProtocolClient {
     private void handleHelloAck(Envelope envelope) {
         try {
             serverInfo = ProtocolCodec.data(envelope, Packets.HelloAck.class);
-        } catch (ProtocolException e) {
+        } catch (Throwable t) {
+            LOG.log(System.Logger.Level.WARNING, "HELLO_ACK 解析失败: " + t);
             return;
         }
         connected = true;
+        helloAttempts = 0;
         if (serverInfo != null) {
             pingIntervalMs = Math.max(1000, serverInfo.sync() == null
                     ? 10000 : serverInfo.sync().pingIntervalMs());
