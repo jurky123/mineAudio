@@ -72,6 +72,7 @@ public final class MineUiIntegration implements AudioUi {
     private final Map<UUID, List<Key>> trackOrder = new HashMap<>();
     private final Map<UUID, Float> volumes = new HashMap<>();
     private final Map<UUID, PendingSeek> pendingSeeks = new HashMap<>();
+    private final Map<UUID, String> tabs = new HashMap<>();
     private final Map<UUID, Boolean> pageLocalModes = new HashMap<>();
     private final Map<UUID, Boolean> hudLocalModes = new HashMap<>();
     private final Map<UUID, String> lastStatus = new HashMap<>();
@@ -212,6 +213,9 @@ public final class MineUiIntegration implements AudioUi {
                 session.state("note", "已停止环境音");
                 push(player, session);
             });
+            session.on("tab_now", action -> switchTab(player, "now", session));
+            session.on("tab_search", action -> switchTab(player, "search", session));
+            session.on("tab_lib", action -> switchTab(player, "lib", session));
             session.on("search", action -> doSearch(player, action.string("text", ""), session));
             for (int i = 0; i < SEARCH_SLOTS; i++) {
                 final int index = i;
@@ -281,6 +285,7 @@ public final class MineUiIntegration implements AudioUi {
         }
         volumes.remove(playerId);
         pendingSeeks.remove(playerId);
+        tabs.remove(playerId);
         pageLocalModes.remove(playerId);
         hudLocalModes.remove(playerId);
         lastStatus.remove(playerId);
@@ -305,6 +310,7 @@ public final class MineUiIntegration implements AudioUi {
         trackOrder.clear();
         volumes.clear();
         pendingSeeks.clear();
+        tabs.clear();
         pageLocalModes.clear();
         hudLocalModes.clear();
         lastStatus.clear();
@@ -375,6 +381,10 @@ public final class MineUiIntegration implements AudioUi {
         }
         session.state("stream", plugin.orchestrator().streamAvailable(player)
                 ? "流媒体客户端：已连接" : "流媒体客户端：未安装（流媒体将走 fallback）");
+        String tab = tabs.getOrDefault(player.getUniqueId(), "now");
+        session.state("tab_now", "now".equals(tab));
+        session.state("tab_search", "search".equals(tab));
+        session.state("tab_lib", "lib".equals(tab));
         pushSearch(player, session);
 
         List<AudioTrack> tracks = new ArrayList<>(plugin.trackRegistry().all());
@@ -400,6 +410,11 @@ public final class MineUiIntegration implements AudioUi {
                 session.state("a" + i + "_name", ambient.get(i).track().id().asString());
             }
         }
+    }
+
+    private void switchTab(Player player, String tab, MineUiSession session) {
+        tabs.put(player.getUniqueId(), tab);
+        push(player, session);
     }
 
     private void pushSearch(Player player, MineUiSession session) {

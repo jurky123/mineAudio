@@ -217,6 +217,7 @@ MineAudio  --解析直链 + 下发 PLAY-->  MineAudio Client（本地解码播�
   逐帧读客户端播放时钟、动作本地直连，不经服务端）；旧客户端或未装 mineui-client-api 时
   自动回退到服务端 1Hz STATE 推送 + 协议指令
 - 解析状态与失败分类（`UNSUPPORTED_SOURCE / CREDENTIAL_MISSING / …`）直接在页面上显示，失败时同时 Toast
+- 页面分三个 Tab：**正在播放**（封面/进度/控制）、**搜索点歌**（输入框+结果+队列）、**曲库**（曲目/环境音）
 - 页面按钮：暂停/继续/停止/±15s 定位/音量 ±10%/HUD 开关；键位：`F7`(槽位1) 打开界面、`F8`(槽位2) 切换 HUD（可在原版按键设置改键）
 - “正在播放”HUD（左上角，MineUI 0.8+ 客户端）：进服自动开启（`stream-client.hud-auto: false` 可关），无播放时自动隐藏；`/mineaudio hud` 手动切换；节点定义 `hud.json`，进度条同样插值
 - 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
