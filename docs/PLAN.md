@@ -15,6 +15,8 @@
 > 解析状态与失败分类 / 错误 Toast / 键位 / “正在播放”HUD）、断线释放通道崩溃修复（客户端 0.1.10）。
 > MoeMusic 兼容路径（命令桥 / Legacy 降级 / `/music queue` 展示解析）已于 2026-09-19 全部移除，
 > 流媒体只走自研客户端；UI 由 MineUI 页面 + HUD 承载，解析失败按分类展示（不再依赖第三方插件）。
+> 2026-09-19 追加：播放时钟状态机重构完成（client-core `PlaybackClock`，客户端 0.2.0）：
+> LOADING/BUFFERING/PLAYING/PAUSED/DRAINING/FINISHED/ERROR 单入口迁移，听感位置只由时钟写。
 > 待办：搜索/队列/歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +

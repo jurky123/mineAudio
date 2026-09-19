@@ -225,7 +225,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         Session session = current;
         if (session == null) return null;
         long duration = session.knownDurationMs();
-        long position = session.presentationPositionMs();
+        long position = session.clock.positionMs();
         return switch (key) {
             case "position" -> position;
             case "duration" -> duration;
@@ -263,11 +263,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 return true;
             }
             case "seek_back" -> {
-                session.seek(Math.max(0, session.presentationPositionMs() - 15_000));
+                session.seek(Math.max(0, session.clock.positionMs() - 15_000));
                 return true;
             }
             case "seek_fwd" -> {
-                long target = session.presentationPositionMs() + 15_000;
+                long target = session.clock.positionMs() + 15_000;
                 session.seek(duration > 0 ? Math.min(target, duration) : target);
                 return true;
             }
@@ -323,26 +323,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile String localUrl;
         private volatile float volume;
         private volatile float lastAppliedVolume = -1f;
-        private volatile boolean paused;
         private volatile boolean started;
-        private volatile boolean finished;
         private volatile boolean closed;
-        private volatile String errorCode;
         private volatile String errorMessage;
         private volatile int seq;
         private volatile long pendingActionAt;
         private volatile Runnable pendingAction;
         private volatile long pendingSeekTargetMs = -1;
         private volatile long pendingSeekDeadlineAt;
-        // 播放时钟（呈现位置）：以真实起播/seek/恢复时刻为锚点，按本地单调时钟推进；
-        // 暂停/缓冲时冻结。上报它才与耳朵听到的位置一致（解码位置会领先环形缓冲+OpenAL 队列）。
-        private volatile long presentAnchorMs;
-        private volatile long presentAnchorAtNanos;
-        private volatile boolean presentRunning;
+        /** 播放时钟状态机：唯一允许写“听感位置”的组件（纯 Java，可单测）。 */
+        private final com.mineaudio.client.playback.PlaybackClock clock =
+                new com.mineaudio.client.playback.PlaybackClock();
         /** 起播时真正会先被听到的媒体位置（startPosition，或迟到跳播后的位置）。 */
         private volatile long startAnchorMs;
-        /** 是否已做过首次起播锚定；seek/恢复后的锚定由 onPcm 首帧负责，通道启动不得覆盖。 */
-        private volatile boolean playbackAnchored;
         private final long createdAtMs = System.currentTimeMillis();
 
         Session(String sessionId, Packets.Play play) {
@@ -357,6 +350,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             this.coverUrl = play.coverUrl();
             this.spatial = play.spatial();
             this.volume = Math.max(0f, Math.min(1f, play.volume()));
+            this.clock.reset(play.durationHintMs());
         }
 
         void start() {
@@ -408,7 +402,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         boolean isMusicActive() {
-            return !closed && !finished && errorCode == null && "MUSIC".equalsIgnoreCase(bus);
+            return !closed && !clock.ended() && "MUSIC".equalsIgnoreCase(bus);
         }
 
         /** 到服务端起播时刻（校时对齐）且首批 PCM 就绪后创建通道，避免提前排静音导致 underrun。 */
@@ -460,9 +454,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     channel.play();
                     // OpenAL 起播会立刻预取缓冲，不能再用“解码位置-环形缓冲”推算；
                     // 只在“首次起播”时用 startAnchorMs 锚定；seek/恢复后的锚点由 onPcm 首帧负责，避免被覆盖成 0
-                    if (!playbackAnchored && pendingSeekTargetMs < 0) {
-                        anchorPresentation(startAnchorMs);
-                        playbackAnchored = true;
+                    if (clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
+                            && pendingSeekTargetMs < 0) {
+                        clock.onOutputStarted(startAnchorMs);
                     }
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                             "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B anchor={}ms",
@@ -479,8 +473,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private void relocate(long positionMs) {
             pendingSeekTargetMs = positionMs;
             pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
-            presentAnchorMs = Math.max(0, positionMs);
-            presentRunning = false;
+            draining = false; // seek 取消未完成的 drain 收尾
+            clock.onSeekRequested(positionMs);
             PcmAudioStream oldStream = stream;
             oldStream.markEnded();
             synchronized (ioLock) {
@@ -495,7 +489,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (old != null) {
                 old.execute(Channel::stop); // 清掉旧通道已排队的旧音频
             }
-            if (started && !closed && !paused) {
+            if (started && !closed && !clock.paused()) {
                 ensureChannel();
             }
             report();
@@ -518,11 +512,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 current.execute(channel -> channel.setVolume(effective));
             }
             if (current == null) return;
-            if (!paused && draining && System.currentTimeMillis() >= drainDeadlineAt) {
+            if (!clock.paused() && draining && System.currentTimeMillis() >= drainDeadlineAt) {
                 finishNow();
                 return;
             }
-            if (paused) {
+            if (clock.paused()) {
                 // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停止
                 current.execute(channel -> {
                     if (channel.playing()) {
@@ -531,8 +525,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 });
                 return;
             }
-            if (finished || errorCode != null) return;
+            if (clock.ended()) return;
             current.execute(channel -> {
+                if (!channel.playing() && clock.playing()) {
+                    // 欠载/设备侧停止：冻结时钟，重新起播后从冻结位置继续
+                    clock.onUnderrun();
+                    channel.updateStream();
+                    channel.play();
+                    clock.onOutputStarted(clock.positionMs());
+                    return;
+                }
                 channel.updateStream();
                 if (!channel.playing()) {
                     channel.play();
@@ -552,10 +554,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         void setPaused(boolean value) {
-            if (paused == value) return; // 幂等：重复 resume/pause 不重置锚点
+            if (clock.paused() == value) return; // 幂等：重复 resume/pause 不重置锚点
             if (value) {
-                freezePresentation();
-                paused = true;
+                clock.onPause();
                 decoder.setPaused(true);
                 // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
                 // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
@@ -564,10 +565,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     current.execute(Channel::stop);
                 }
             } else {
-                paused = false;
+                clock.onResume();
                 decoder.setPaused(false);
                 // 从冻结位置精确重定位（重连一次，换取不跳帧、无残留队列）
-                relocate(presentAnchorMs);
+                relocate(clock.positionMs());
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",
@@ -582,44 +583,22 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             relocate(positionMs);
         }
 
-        /** 播放时钟当前位置（毫秒）；未起播时返回起始位置/0。 */
-        private long presentationPositionMs() {
-            long anchor = presentAnchorMs;
-            if (!presentRunning) {
-                return Math.max(0, anchor);
-            }
-            long elapsed = (System.nanoTime() - presentAnchorAtNanos) / 1_000_000;
-            long position = anchor + Math.max(0, elapsed);
-            long duration = decoder.durationMs();
-            if (duration > 0 && position > duration) {
-                position = duration;
-            }
-            return Math.max(0, position);
-        }
-
-        private void anchorPresentation(long mediaPositionMs) {
-            presentAnchorMs = Math.max(0, mediaPositionMs);
-            presentAnchorAtNanos = System.nanoTime();
-            presentRunning = true;
-        }
-
-        private void freezePresentation() {
-            long current = presentationPositionMs();
-            presentAnchorMs = current;
-            presentRunning = false;
-        }
-
         long knownDurationMs() {
             long duration = decoder.durationMs();
-            return duration > 0 && duration <= MAX_REASONABLE_DURATION_MS ? duration : durationHintMs;
+            duration = duration > 0 && duration <= MAX_REASONABLE_DURATION_MS ? duration : durationHintMs;
+            clock.setDuration(duration);
+            return duration;
         }
 
         boolean isPresentationPlaying() {
-            return started && !paused && !finished && errorCode == null;
+            return clock.playing();
         }
 
         boolean isBuffering() {
-            return !paused && !finished && errorCode == null && (!started || pendingSeekTargetMs >= 0);
+            return !clock.paused() && !clock.ended()
+                    && (clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
+                    || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.BUFFERING
+                    || pendingSeekTargetMs >= 0);
         }
 
         float currentVolume() {
@@ -627,7 +606,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         boolean hasAudibleContent() {
-            return errorCode == null && !finished;
+            return !clock.ended();
         }
 
         void setVolume(float value) {
@@ -688,33 +667,19 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         private void report() {
             if (closed) return;
-            String state;
-            if (errorCode != null) {
-                state = "ERROR";
-            } else if (finished) {
-                state = "FINISHED";
-            } else if (paused) {
-                state = "PAUSED";
-            } else if (draining) {
-                state = "PLAYING"; // 解码已结束，输出缓冲仍在播放
-            } else if (!started) {
-                state = "BUFFERING";
-            } else if (decoder.durationMs() > 0 || decoder.positionMs() > 0) {
-                state = "PLAYING";
-            } else {
-                state = "BUFFERING";
-            }
+            // 状态只由播放时钟决定（DRAINING 映射为 PLAYING）
+            String state = clock.stateName();
             long decoderDuration = decoder.durationMs();
             long duration = decoderDuration > 0 && decoderDuration <= MAX_REASONABLE_DURATION_MS
                     ? decoderDuration : durationHintMs;
             // 上报听感位置（播放时钟），不再用解码位置或环形缓冲推算
             int availableBytes = ring.available();
-            long position = presentationPositionMs();
+            long position = clock.positionMs();
             if (duration > 0 && position > duration) {
                 position = duration;
             }
-            Packets.State.Error error = errorCode == null
-                    ? null : new Packets.State.Error(errorCode, errorMessage);
+            Packets.State.Error error = clock.errorCode() == null
+                    ? null : new Packets.State.Error(clock.errorCode(), errorMessage);
             Packets.State snapshot = new Packets.State(
                     ++seq, state, position, duration,
                     availableBytes / BYTES_PER_MS,
@@ -724,9 +689,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         private void fail(String code, String message) {
-            if (errorCode == null) {
-                errorCode = code;
+            if (clock.errorCode() == null) {
                 errorMessage = message;
+                clock.onError(code);
                 ProtocolClient.get().sendError(id, revision, code, message);
             }
             report();
@@ -744,9 +709,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 if (Math.abs(timecodeMs - target) <= SEEK_FILTER_TOLERANCE_MS) {
                     pendingSeekTargetMs = -1;
                     // 音频确实在目标位置：直接锚定目标，避免重连后首帧 timecode 相对化导致进度归零
-                    if (!paused) {
-                        anchorPresentation(target);
-                        playbackAnchored = true;
+                    if (!clock.paused()) {
+                        clock.onSeekApplied(target);
                         report();
                     }
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
@@ -754,9 +718,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     return;
                 } else {
                     pendingSeekTargetMs = -1;
-                    if (!paused) {
-                        anchorPresentation(target);
-                        playbackAnchored = true;
+                    if (!clock.paused()) {
+                        clock.onSeekApplied(target);
                         report();
                     }
                 }
@@ -797,18 +760,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         @Override
         public void onEnded() {
             // 解码结束但输出缓冲还有音频：先进入 DRAINING，等播放时钟走完再 FINISHED
-            if (finished || draining) return;
+            if (clock.ended() || draining) return;
             draining = true;
             drainDeadlineAt = System.currentTimeMillis() + ring.available() / BYTES_PER_MS + 800;
+            clock.onDecoderEnded();
             report();
         }
 
         /** 输出耗尽后的最终收尾：冻结时钟、释放网关资源、上报 FINISHED。 */
         private void finishNow() {
-            if (finished) return;
+            if (clock.finished()) return;
             draining = false;
-            freezePresentation();
-            finished = true;
+            clock.onDrained();
             stream.markEnded();
             unregisterGateway();
             report();
