@@ -66,6 +66,8 @@ resolvers:
     credential-file: ""
     # 音质：standard / higher / exhigh / lossless / hires
     level: "exhigh"
+    # 封面缩略图边长（网易 ?param=WxY）；0 = 使用原图
+    cover-px: 64
     timeout-ms: 5000
     max-concurrent: 4
 

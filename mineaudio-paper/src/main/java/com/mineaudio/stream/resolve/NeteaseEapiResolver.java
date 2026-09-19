@@ -60,7 +60,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
     }
 
     public record Config(boolean enabled, String credentialEnv, String credentialFile,
-                         String level, int timeoutMs, int maxConcurrent) {
+                         String level, int timeoutMs, int maxConcurrent, int coverPx) {
     }
 
     @Override
@@ -210,7 +210,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
                         return;
                     }
                     try {
-                        enriched.complete(mergeDetail(base, decodeBody(response.body())));
+                        enriched.complete(mergeDetail(base, decodeBody(response.body()), config.coverPx()));
                     } catch (Exception e) {
                         enriched.complete(base);
                     }
@@ -219,7 +219,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
     }
 
     /** 解析 song/detail 响应，失败字段回退 base。 */
-    static ResolveResult mergeDetail(ResolveResult base, String body) {
+    static ResolveResult mergeDetail(ResolveResult base, String body, int coverPx) {
         try {
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             JsonArray songs = root.has("songs") ? root.getAsJsonArray("songs") : null;
@@ -238,7 +238,8 @@ public final class NeteaseEapiResolver implements StreamResolver {
             if (song.has("al") && song.get("al").isJsonObject()) {
                 JsonObject album = song.getAsJsonObject("al");
                 if (album.has("picUrl") && !album.get("picUrl").isJsonNull()) {
-                    cover = com.mineaudio.stream.CoverUrls.thumb(album.get("picUrl").getAsString());
+                    cover = com.mineaudio.stream.CoverUrls.thumb(
+                            album.get("picUrl").getAsString(), coverPx);
                 }
             }
             return new ResolveResult(base.streamUrl(), title, artist, base.durationMs(),

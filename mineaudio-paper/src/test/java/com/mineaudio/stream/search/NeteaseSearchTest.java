@@ -36,17 +36,19 @@ class NeteaseSearchTest {
     }
 
     @Test
-    void mergeDetailAddsCoverAndNormalizesTitleArtist() {
+    void mergeDetailKeepsOriginalWhenCoverPxDisabled() {
         List<SearchResult> base = List.of(
                 new SearchResult("ncmlite", "1", "旧标题", "旧歌手", null, 1000, true, "标准音质"));
         String detail = """
                 {"songs":[{"id":1,"name":"新标题","ar":[{"name":"新歌手"}],
                   "al":{"picUrl":"https://p2.music.126.net/x/1.jpg"}}]}""";
-        List<SearchResult> merged = NeteaseSearch.mergeDetail(base, detail);
+        List<SearchResult> merged = NeteaseSearch.mergeDetail(base, detail, 64);
         assertEquals(1, merged.size());
         assertEquals("新标题", merged.get(0).title());
         assertEquals("新歌手", merged.get(0).artist());
         assertEquals("https://p2.music.126.net/x/1.jpg?param=64y64", merged.get(0).coverUrl());
+        assertEquals("https://p2.music.126.net/x/1.jpg",
+                NeteaseSearch.mergeDetail(base, detail, 0).get(0).coverUrl());
         assertTrue(merged.get(0).playable());
     }
 

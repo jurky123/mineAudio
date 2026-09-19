@@ -42,14 +42,17 @@ public final class NeteaseSearch {
     private final boolean enabled;
     private final int timeoutMs;
     private final int maxResults;
+    private final int coverPx;
     private final Supplier<String> cookieSupplier;
     private final HttpClient http;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
-    public NeteaseSearch(boolean enabled, int timeoutMs, int maxResults, Supplier<String> cookieSupplier) {
+    public NeteaseSearch(boolean enabled, int timeoutMs, int maxResults, int coverPx,
+                         Supplier<String> cookieSupplier) {
         this.enabled = enabled;
         this.timeoutMs = Math.max(500, timeoutMs);
         this.maxResults = Math.max(1, Math.min(10, maxResults));
+        this.coverPx = coverPx;
         this.cookieSupplier = cookieSupplier;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(this.timeoutMs))
@@ -189,7 +192,7 @@ public final class NeteaseSearch {
                 .thenApply(response -> {
                     if (response.statusCode() != 200) return base;
                     try {
-                        return mergeDetail(base, decodeBody(response.body()));
+                        return mergeDetail(base, decodeBody(response.body()), coverPx);
                     } catch (Exception e) {
                         return base;
                     }
@@ -206,7 +209,7 @@ public final class NeteaseSearch {
         return "{\"c\":\"[" + ids + "]\"}";
     }
 
-    static List<SearchResult> mergeDetail(List<SearchResult> base, String body) {
+    static List<SearchResult> mergeDetail(List<SearchResult> base, String body, int coverPx) {
         JsonObject root;
         try {
             root = JsonParser.parseString(body).getAsJsonObject();
@@ -235,7 +238,7 @@ public final class NeteaseSearch {
             String cover = result.coverUrl();
             if (song.has("al") && song.get("al").isJsonObject()) {
                 cover = com.mineaudio.stream.CoverUrls.thumb(
-                        stringOr(song.getAsJsonObject("al"), "picUrl", cover));
+                        stringOr(song.getAsJsonObject("al"), "picUrl", cover), coverPx);
             }
             merged.add(new SearchResult(result.source(), result.id(), title, artist, cover,
                     result.durationMs(), result.playable(), result.note()));

@@ -179,12 +179,13 @@ public final class MineAudioPlugin extends JavaPlugin {
         String level = getConfig().getString("resolvers.netease.level", "exhigh");
         int timeoutMs = getConfig().getInt("resolvers.netease.timeout-ms", 5000);
         int maxConcurrent = getConfig().getInt("resolvers.netease.max-concurrent", 4);
+        int coverPx = getConfig().getInt("resolvers.netease.cover-px", 64);
         NeteaseEapiResolver netease = new NeteaseEapiResolver(new NeteaseEapiResolver.Config(
-                neteaseEnabled, credentialEnv, credentialFile, level, timeoutMs, maxConcurrent));
+                neteaseEnabled, credentialEnv, credentialFile, level, timeoutMs, maxConcurrent, coverPx));
         boolean searchEnabled = neteaseEnabled && getConfig().getBoolean("search.enabled", true);
         int maxResults = getConfig().getInt("search.max-results", 6);
         searchService = new com.mineaudio.stream.search.NeteaseSearch(
-                searchEnabled, timeoutMs, maxResults, netease::cookieHeader);
+                searchEnabled, timeoutMs, maxResults, coverPx, netease::cookieHeader);
         if (neteaseEnabled) {
             getLogger().info("网易解析器已启用（凭证：" + (netease.hasCredential() ? "已配置" : "未配置，仅匿名")
                     + "，音质：" + level + "）");

@@ -11,14 +11,18 @@ public final class CoverUrls {
     private CoverUrls() {
     }
 
-    /** 网易封面加缩略参数；其他 URL 原样返回。 */
-    public static String thumb(String url) {
-        if (url == null || url.isBlank()) {
+    /** 网易封面加缩略参数（px<=0 表示保留原图）；其他 URL 原样返回。 */
+    public static String thumb(String url, int px) {
+        if (url == null || url.isBlank() || px <= 0) {
             return url;
         }
         if (!url.contains("music.126.net") || url.contains("?")) {
             return url;
         }
-        return url + "?param=" + THUMB_PX + "y" + THUMB_PX;
+        return url + "?param=" + px + "y" + px;
+    }
+
+    public static String thumb(String url) {
+        return thumb(url, THUMB_PX);
     }
 }
