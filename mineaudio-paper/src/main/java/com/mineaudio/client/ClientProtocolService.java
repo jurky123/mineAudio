@@ -103,6 +103,11 @@ public final class ClientProtocolService {
             return;
         }
         registry.markHello(player, hello);
+        // 握手完成后再尝试受众会话（晚加入：按共享时间轴对齐当前进度）
+        AudioOrchestrator orchestrator = plugin.orchestrator();
+        if (orchestrator != null) {
+            orchestrator.onClientReady(player);
+        }
         Packets.HelloAck ack = new Packets.HelloAck(
                 plugin.getPluginMeta().getVersion(),
                 Math.max(200, plugin.getConfig().getInt("stream-client.state-report-ms", 1000)),

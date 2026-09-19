@@ -33,6 +33,7 @@ import com.mineaudio.api.event.TrackFinishedEvent;
 import com.mineaudio.api.event.TrackStartedEvent;
 import com.mineaudio.backend.AudioBackend;
 import com.mineaudio.backend.BackendRegistry;
+import com.mineaudio.backend.StreamBackend;
 import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.profile.PlayerStreamStatus;
 import com.mineaudio.track.CueRegistry;
@@ -82,7 +83,9 @@ public final class AudioOrchestrator implements MineAudio {
             return NoopPlaybackHandle.stopped();
         }
         PlaybackOptions options = override != null ? override : track.options();
-        ActiveSession session = new ActiveSession(track, options, audience);
+        long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
+        ActiveSession session = new ActiveSession(track, options, audience,
+                new Timeline(System.nanoTime() / 1_000_000 + leadMs, 0));
         for (Player player : audience.players()) {
             startFor(session, player);
         }
@@ -386,15 +389,25 @@ public final class AudioOrchestrator implements MineAudio {
     private void startFor(ActiveSession session, Player player) {
         UUID playerId = player.getUniqueId();
         if (session.players.containsKey(playerId)) return;
-        PlaybackSession playback = startPlayer(player, session.track, session.options, PlaybackOrigin.API);
+        PlaybackSession playback = startPlayer(player, session.track, session.options, PlaybackOrigin.API, session);
         if (playback != null) {
             session.players.put(playerId, playback);
         }
     }
 
+    /** 客户端 HELLO 完成后调用：补做因握手未就绪而失败的受众会话（含晚加入对齐）。 */
+    public void onClientReady(Player player) {
+        refresh(player);
+    }
+
     /** 启动一次单玩家播放；被更高优先级会话拒绝或无法选源时返回 null。 */
     private PlaybackSession startPlayer(Player player, AudioTrack track, PlaybackOptions options,
                                         PlaybackOrigin origin) {
+        return startPlayer(player, track, options, origin, null);
+    }
+
+    private PlaybackSession startPlayer(Player player, AudioTrack track, PlaybackOptions options,
+                                        PlaybackOrigin origin, ActiveSession session) {
         Optional<AudioSource> resolved = SourceResolver.resolve(track,
                 packStatus.packAvailable(player), streamStatus.streamAvailable(player), backends::canPlay);
         if (resolved.isEmpty()) {
@@ -413,7 +426,17 @@ public final class AudioOrchestrator implements MineAudio {
         AudioBackend backend = backends.find(resolved.get()).orElse(null);
         if (backend == null) return null;
 
-        PlaybackHandle handle = backend.play(player, track, resolved.get(), options);
+        PlaybackHandle handle;
+        if (session != null && backend instanceof StreamBackend streamBackend
+                && resolved.get() instanceof AudioSource.Stream) {
+            // 共享时间轴：晚加入者按“届时应处进度”起播
+            long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
+            long startAt = System.nanoTime() / 1_000_000 + leadMs;
+            handle = streamBackend.play(player, track, resolved.get(), options,
+                    startAt, session.timeline().positionAt(startAt));
+        } else {
+            handle = backend.play(player, track, resolved.get(), options);
+        }
         PlaybackSession playback = new PlaybackSession(candidate.id(), track, resolved.get(),
                 options, handle, backend.id(), origin);
         PlaybackSession previous = state.replace(playback);
@@ -512,13 +535,20 @@ public final class AudioOrchestrator implements MineAudio {
         private final AudioTrack track;
         private final PlaybackOptions options;
         private final Audience audience;
+        private final Timeline timeline;
         private final Map<UUID, PlaybackSession> players = new LinkedHashMap<>();
         private PlaybackState state = PlaybackState.PLAYING;
 
-        private ActiveSession(AudioTrack track, PlaybackOptions options, Audience audience) {
+        private ActiveSession(AudioTrack track, PlaybackOptions options, Audience audience, Timeline timeline) {
             this.track = track;
             this.options = options;
             this.audience = audience;
+            this.timeline = timeline;
+        }
+
+        /** 共享播放时间轴（晚加入对齐依据）。 */
+        public Timeline timeline() {
+            return timeline;
         }
 
         @Override

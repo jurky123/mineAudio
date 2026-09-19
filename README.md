@@ -165,13 +165,13 @@ MineAudio  --解析直链 + 下发 PLAY-->  MineAudio Client（本地解码播�
 1. 玩家安装 `mineaudio-client-kit`（`tools/build_client_kit.sh` 生成），进服后经 `mineaudio:stream` 通道自动握手
 2. 在 `tracks.yml` 定义 `type: STREAM` 曲目（`uri` 直链或 `source + id`，如网易云）
 3. `/mineaudio play <曲目> global` 点播；支持暂停/继续/定位/音量，`/mineaudio ui` 有完整界面
-   （全服＝同一时刻起播；共享时间轴/晚加入自动对齐为后续项，当前不做）
+   （全服＝共享时间轴：同一锚点起播，晚加入者自动对齐到当前进度）
 
 能力（`AudioCapabilities` 如实反映）：
 
 | 能力 | 自研客户端 | 说明 |
 | --- | --- | --- |
-| 同步播放 | ✓ | 服务端校时 + 同一时刻起播（lead）；晚加入不自动补播，需再次点播 |
+| 同步播放 | ✓ | 共享时间轴：服务端统一锚点，晚加入者按当前进度自动对齐 |
 | 暂停 / 继续 / 停止 | ✓ | 协议指令下发，服务端权威 |
 | Seek | ✓ | 命令与界面都支持（绝对定位 / ±15s） |
 | 音量 | ✓ | 运行时音量，自动跟随游戏设置 |

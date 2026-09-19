@@ -17,6 +17,8 @@
 > 流媒体只走自研客户端；UI 由 MineUI 页面 + HUD 承载，解析失败按分类展示（不再依赖第三方插件）。
 > 2026-09-19 追加：播放时钟状态机重构完成（client-core `PlaybackClock`，客户端 0.2.0）：
 > LOADING/BUFFERING/PLAYING/PAUSED/DRAINING/FINISHED/ERROR 单入口迁移，听感位置只由时钟写。
+> 2026-09-19 追加：共享时间轴（R8）落地——受众会话统一锚点（`Timeline`），
+> 晚加入者在 HELLO 后按当前进度补播对齐；暂停/seek 仍为 per-player，全服统一控制待定。
 > 待办：搜索/队列/歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +

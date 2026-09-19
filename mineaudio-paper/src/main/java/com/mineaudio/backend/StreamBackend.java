@@ -84,14 +84,20 @@ public final class StreamBackend implements AudioBackend {
 
     @Override
     public PlaybackHandle play(Player player, AudioTrack track, AudioSource source, PlaybackOptions options) {
+        long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
+        long startTime = System.nanoTime() / 1_000_000 + leadMs;
+        return play(player, track, source, options, startTime, 0);
+    }
+
+    /** 共享时间轴：由调用方指定起播时刻与该时刻的进度（晚加入者按当前进度对齐）。 */
+    public PlaybackHandle play(Player player, AudioTrack track, AudioSource source, PlaybackOptions options,
+                               long startServerTimeMs, long positionMs) {
         if (!(source instanceof AudioSource.Stream stream)) return NoopPlaybackHandle.stopped();
         StreamProvider provider = select(player, stream);
         if (provider == null) return NoopPlaybackHandle.stopped();
-        long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
-        long startTime = System.nanoTime() / 1_000_000 + leadMs;
         StreamPlaybackRequest request = new StreamPlaybackRequest(
                 UUID.randomUUID(), track, stream, options,
-                new StreamPlaybackRequest.StreamTiming(startTime, 0, 1));
+                new StreamPlaybackRequest.StreamTiming(startServerTimeMs, Math.max(0, positionMs), 1));
         return provider.play(player, request);
     }
 
