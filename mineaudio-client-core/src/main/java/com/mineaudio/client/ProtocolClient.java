@@ -166,10 +166,6 @@ public final class ProtocolClient {
                 ProtocolCodec.data(new Packets.ErrorReport(code, safe)));
     }
 
-    public void sendUrlRefresh(String session, int revision, Packets.UrlRefresh refresh) {
-        sendSession(PacketType.URL_REFRESH, session, revision, ProtocolCodec.data(refresh));
-    }
-
     // ---------- 收发 ----------
 
     public void handle(byte[] data) {

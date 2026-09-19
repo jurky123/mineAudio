@@ -12,8 +12,6 @@ public enum PacketType {
     RESUME,
     SEEK,
     VOLUME,
-    URL_REFRESH,
-    URL_REFRESH_RESULT,
     STATE,
     PING,
     PONG,

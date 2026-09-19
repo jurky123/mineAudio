@@ -1,9 +1,5 @@
 package com.mineaudio.client;
 
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -30,7 +26,6 @@ public final class ClientProtocolService {
     private final MineAudioPlugin plugin;
     private final ClientConnectionRegistry registry = new ClientConnectionRegistry();
     private final ClientPlaybackStateCache stateCache = new ClientPlaybackStateCache();
-    private final Map<String, CompletableFuture<Packets.UrlRefreshResult>> refreshFutures = new ConcurrentHashMap<>();
     private final PluginMessageListener listener = this::onPluginMessageReceived;
 
     public ClientProtocolService(MineAudioPlugin plugin) {
@@ -79,15 +74,6 @@ public final class ClientProtocolService {
         }
     }
 
-    /** 请求客户端刷新 URL；返回的 future 由调用方设置超时。 */
-    public CompletableFuture<Packets.UrlRefreshResult> requestUrlRefresh(
-            Player player, String session, int revision, Packets.UrlRefresh refresh) {
-        CompletableFuture<Packets.UrlRefreshResult> future = new CompletableFuture<>();
-        refreshFutures.put(refresh.requestId(), future);
-        send(player, Envelope.session(PacketType.URL_REFRESH, session, revision, ProtocolCodec.data(refresh)));
-        return future;
-    }
-
     // ---------- 接收 ----------
 
     private void onPluginMessageReceived(String channel, Player player, byte[] message) {
@@ -102,7 +88,6 @@ public final class ClientProtocolService {
             case HELLO -> onHello(player, envelope);
             case PING -> onPing(player, envelope);
             case STATE -> onState(player, envelope);
-            case URL_REFRESH_RESULT -> onRefreshResult(envelope);
             case ERROR -> onError(player, envelope);
             default -> {
                 // 未知包忽略
@@ -177,19 +162,6 @@ public final class ClientProtocolService {
         }
     }
 
-    private void onRefreshResult(Envelope envelope) {
-        Packets.UrlRefreshResult result;
-        try {
-            result = ProtocolCodec.data(envelope, Packets.UrlRefreshResult.class);
-        } catch (ProtocolException e) {
-            return;
-        }
-        CompletableFuture<Packets.UrlRefreshResult> future = refreshFutures.remove(result.requestId());
-        if (future != null) {
-            future.complete(result);
-        }
-    }
-
     private void onError(Player player, Envelope envelope) {
         Packets.ErrorReport error;
         try {
@@ -199,5 +171,11 @@ public final class ClientProtocolService {
         }
         plugin.getLogger().warning("[client] " + player.getName() + " 播放错误 "
                 + error.code() + "：" + error.message());
+        // ERROR 包同样驱动服务端幂等收尾（与 STATE 终态互为兜底）
+        AudioOrchestrator orchestrator = plugin.orchestrator();
+        if (orchestrator != null && envelope.session() != null) {
+            orchestrator.onClientTerminal(player, envelope.session(), false,
+                    error.code(), error.message());
+        }
     }
 }

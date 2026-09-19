@@ -81,8 +81,8 @@ public final class MineUiIntegration implements AudioUi {
         this.hudPage = load("hud");
         this.hudPageLocal = load("hud-local");
         if (api != null) {
-            api.onAction(plugin, "open_ui", action -> open(action.player()));
-            api.onAction(plugin, "toggle_hud", action -> toggleHud(action.player()));
+            api.onAction(plugin, "mineaudio:open_ui", action -> open(action.player()));
+            api.onAction(plugin, "mineaudio:toggle_hud", action -> toggleHud(action.player()));
         }
         Bukkit.getPluginManager().registerEvents(new Listener() {
             @EventHandler
@@ -568,8 +568,8 @@ public final class MineUiIntegration implements AudioUi {
 
     private void declareKeybinds(Player player) {
         if (api == null || !api.supportsKeybind(player)) return;
-        api.keybind(plugin, player, "1", "open_ui", "音乐界面");
-        api.keybind(plugin, player, "2", "toggle_hud", "音乐 HUD");
+        api.keybind(plugin, player, "1", "mineaudio:open_ui", "音乐界面");
+        api.keybind(plugin, player, "2", "mineaudio:toggle_hud", "音乐 HUD");
     }
 
     private static String formatMs(long ms) {

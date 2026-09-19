@@ -637,7 +637,7 @@
         },
         {
           "type": "text",
-          "text": "按 {key.open_ui} 打开音乐界面 · {key.toggle_hud} 切换 HUD；点播请用 /mineaudio play",
+          "text": "按 {key.mineaudio:open_ui} 打开音乐界面 · {key.mineaudio:toggle_hud} 切换 HUD；点播请用 /mineaudio play",
           "color": "#808080",
           "scale": 0.8
         },

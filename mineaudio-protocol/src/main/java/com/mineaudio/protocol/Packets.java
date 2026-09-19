@@ -89,17 +89,6 @@ public final class Packets {
     public record Pong(long t0, long t1, long t2) {
     }
 
-    public record UrlRefresh(String requestId, int resourceVersion, String reason, long positionMs) {
-    }
-
-    public record UrlRefreshResult(
-            String requestId,
-            int resourceVersion,
-            String url,
-            long expiresAt,
-            State.Error error) {
-    }
-
     public record ErrorReport(String code, String message) {
     }
 }

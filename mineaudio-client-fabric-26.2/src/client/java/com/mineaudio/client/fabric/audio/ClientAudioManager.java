@@ -301,12 +301,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final String bus;
         private final long durationHintMs;
         private final Packets.Play.Spatial spatial;
+        /** 媒体内容标识（不含会话身份），跨会话复用缓存。 */
+        private final String cacheKey;
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
         private final PcmAudioStream stream = new PcmAudioStream(ring);
         private final LavaPlayerDecoder decoder = new LavaPlayerDecoder();
         private final java.util.concurrent.atomic.AtomicBoolean firstPcm = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean channelRequested = new java.util.concurrent.atomic.AtomicBoolean();
-        /** seek 代际：seek 后旧解码回调即使已在途中也会被丢弃，避免旧 PCM 污染新位置。 */
         /** seek 与 PCM 写入的串行化锁：保证“检查代际+写入”与“seek+清空”互斥。 */
         private final Object ioLock = new Object();
         private volatile boolean draining;
@@ -339,6 +340,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             this.id = sessionId;
             this.revision = play.resourceVersion();
             this.url = play.url();
+            this.cacheKey = buildCacheKey(play);
             this.startPositionMs = play.positionMs();
             this.serverStartTimeMs = play.serverStartTime();
             this.bus = play.bus();
@@ -365,7 +367,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 SecureMediaGateway gw = gateway();
                 if (gw != null) {
                     String local = gw.register(new SecureMediaGateway.Resource(
-                            id + "@" + revision, uri, Map.of(), 0));
+                            cacheKey, uri, Map.of(), 0));
                     if (closed) {
                         gw.unregister(local);
                         return;
@@ -384,6 +386,15 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                         "[audio] 媒体网关准备失败，直连播放 session={}：{}", id, t.toString());
             }
             decoder.start(playUrl, startPositionMs, this);
+        }
+
+        /** 媒体内容键：会话身份与媒体身份分离，重复播放同一曲目可命中缓存。 */
+        private static String buildCacheKey(Packets.Play play) {
+            String identity = play.sourceId() == null || play.sourceId().isBlank()
+                    ? play.url()
+                    : play.source() + "|" + play.sourceId();
+            String track = play.trackId() == null ? "" : play.trackId();
+            return track + "|" + identity + "|v" + play.resourceVersion();
         }
 
         boolean isMusicActive() {

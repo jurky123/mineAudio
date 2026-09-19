@@ -59,6 +59,37 @@ processResources {
     filesMatching('plugin.yml') {
         expand props
     }
+    // 本地绑定页面由服务端推送页面自动生成，避免两份大 JSON 长期分叉
+    doLast {
+        def uiDir = destinationDir.toPath().resolve('assets/mineaudio/ui/mineaudio')
+        def variants = [
+                'player.json': ['player-local.json', [
+                        ('"value": "{state.percent}"')  : '"value": "{local.mineaudio.percent}"',
+                        ('"playing": "{state.playing}"'): '"playing": "{local.mineaudio.playing}"',
+                        ('"interpolate": true')         : '"interpolate": false',
+                        ('"text": "{state.time}"')      : '"text": "{local.mineaudio.time}"',
+                        ('"action": "seek_to"')         : '"action": "local:mineaudio.seek"',
+                        ('"action": "pause"')           : '"action": "local:mineaudio.pause"',
+                        ('"action": "resume"')          : '"action": "local:mineaudio.resume"',
+                        ('"action": "seek_back"')       : '"action": "local:mineaudio.seek_back"',
+                        ('"action": "seek_fwd"')        : '"action": "local:mineaudio.seek_fwd"',
+                        ('"action": "vol_down"')        : '"action": "local:mineaudio.volume_down"',
+                        ('"action": "vol_up"')          : '"action": "local:mineaudio.volume_up"',
+                        ('"text": "{state.volume}"')    : '"text": "{local.mineaudio.volume}%"',
+                ]],
+                'hud.json'   : ['hud-local.json', [
+                        ('"value": "{state.percent}"')  : '"value": "{local.mineaudio.percent}"',
+                        ('"playing": "{state.playing}"'): '"playing": "{local.mineaudio.playing}"',
+                        ('"interpolate": true')         : '"interpolate": false',
+                        ('"text": "{state.time}"')      : '"text": "{local.mineaudio.time}"',
+                ]],
+        ]
+        variants.each { source, spec ->
+            def text = new File(uiDir.toFile(), source).getText('UTF-8')
+            spec[1].each { from, to -> text = text.replace(from, to) }
+            new File(uiDir.toFile(), spec[0]).setText(text, 'UTF-8')
+        }
+    }
 }
 
 jar {
