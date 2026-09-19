@@ -116,3 +116,69 @@ MineUI 已能承载屏幕页面（会话 / 状态 / 动作 / 组件 / 动态贴�
 ---
 
 落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。
+
+## 8. FR-12 客户端本地状态与动作（跨 mod 极简 API，2026-09-19 评审后确定）
+
+背景：播放位置 / 拖动预览 / 本地暂停必须由客户端在本地主线程逐帧处理，不能再经服务端 1Hz 中转；
+但 MineUI 页面是服务端下发的 JSON，需要一条“页面直接读本地状态、直接派发本地动作”的通路。
+
+### 8.1 API 形态（选定方案 a）
+
+- 新增独立 artifact/mod：`mineui-client-api`
+  - **纯 Java 接口 + 注册表，无 MC 依赖**，做成无入口点的 Fabric library mod（`fabric.mod.json` 仅 id/version）
+  - 随客户端包分发；MineUI 客户端与业务客户端（MineAudio Client）都 `compileOnly` 依赖它、
+    运行时不 `include`（避免双份嵌套同 id 冲突）
+  - MineUI 不在时注册表只是没人消费，业务客户端正常加载（惰性、无副作用）
+- 不采用方案 b（业务客户端依赖整个 MineUI UI mod）
+
+### 8.2 接口草案
+
+```java
+package com.mineui.client.api;
+
+public interface ClientStateProvider {
+    /** 客户端渲染/逻辑线程调用；无该键返回 null。实现必须无阻塞、无网络。 */
+    Object get(String key);
+}
+
+public interface ClientActionHandler {
+    /** 返回 true 表示已处理；false 交给默认逻辑（当前默认：忽略）。 */
+    boolean handle(String action, java.util.Map<String, Object> payload);
+}
+
+public interface MineUiClientBridge {
+    static MineUiClientBridge get();
+    /** namespace 如 "mineaudio"；返回的 AutoCloseable 用于注销。 */
+    AutoCloseable register(String namespace, ClientStateProvider state, ClientActionHandler actions);
+    /** 供 MineUI HELLO 汇总上报的能力位（注册时自动加入，见 8.4）。 */
+    void declareCapability(String capability);
+}
+```
+
+- 绑定语法：`{local.<namespace>.<key>}`；动作：`action: "local:<namespace>.<action>"`，payload 与现有动作一致
+- 生命周期：注销后对应绑定渲染为空串、动作忽略；业主停用/断开连接时 MineUI 清理
+
+### 8.3 能力位与降级（确定）
+
+- 能力位使用 **`local_state`（有状态提供者）+ `local_action`（有动作处理器）**，
+  由 MineUI 客户端按注册表自动加入 HELLO caps。不用 `music_local`（业务专用，违背通用性）；
+  命名空间是 API 内部概念，不进入能力位。
+- 降级语义：
+  - 旧客户端 / 未安装 MineUI 客户端 / 未注册命名空间 → `{local.*}` 渲染为空串
+  - `local:` 动作被忽略并返回 `handled=false`：不弹错、不回传服务端
+- 服务端通过 `local_state` 能力位决定下发“本地版”还是“服务端推送版”页面/控制
+
+### 8.4 安全边界（确定，写死在文档与实现里）
+
+- `local.*` 是客户端本地数据（可信本地 mod 提供），**只在本机解析，协议里不出现，服务端无法读取**
+- `local:` 动作只派发给**同命名空间**的注册者，禁止跨命名空间派发
+- 本地数据可被本机玩家篡改，但只影响该玩家自己；任何权威判定（全服同步、计分、权限）
+  必须走服务端，不得依赖 `local.*`
+
+### 8.5 MineAudio 侧接入（本次交付依赖它）
+
+- MineAudio Client 注册命名空间 `mineaudio`：
+  - state：`position` / `duration` / `playing` / `buffering` / `volume`（来自 0.1.17 起的播放时钟）
+  - actions：`seek` / `pause` / `resume` / `volume`
+- 页面（player.json / hud.json）在有 `local_state` 时使用 `{local.mineaudio.*}` 与
+  `local:mineaudio.*` 动作；否则沿用当前服务端推送 + `SEEK/PAUSE/...` 协议回退
