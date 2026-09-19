@@ -254,6 +254,7 @@ lines:
 /mineaudio seek <毫秒|mm:ss> [玩家]                  # 定位，如 90000 或 1:30
 /mineaudio volume <0-100> [玩家]                     # 运行时音量
 /mineaudio search <关键词>                           # 搜索网易云（标题/歌手/封面/可播放标记）
+/mineaudio search next|prev                          # 搜索结果翻页（UI 搜索页也有翻页按钮）
 /mineaudio queue add|play <序号>                     # 点歌入队（每人上限默认 2 首）/ 立即播放
 /mineaudio queue list | clear                        # 查看 / 清空点歌队列
 

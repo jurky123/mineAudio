@@ -178,21 +178,38 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
             return;
         }
         String keyword = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
-        sender.sendMessage(Component.text("正在搜索：" + keyword + " …", NamedTextColor.GRAY));
-        plugin.searchService().search(keyword).whenComplete((results, error) ->
+        int page = 0;
+        if (sender instanceof Player p) {
+            String previousKeyword = orchestrator.searchKeyword(p);
+            if ("next".equalsIgnoreCase(keyword) && previousKeyword != null) {
+                keyword = previousKeyword;
+                page = orchestrator.searchPage(p) + 1;
+            } else if ("prev".equalsIgnoreCase(keyword) && previousKeyword != null) {
+                keyword = previousKeyword;
+                page = Math.max(0, orchestrator.searchPage(p) - 1);
+            }
+        }
+        final String searchKeyword = keyword;
+        final int searchPage = page;
+        sender.sendMessage(Component.text("正在搜索：" + keyword + "（第 " + (page + 1) + " 页）…",
+                NamedTextColor.GRAY));
+        plugin.searchService().search(keyword, page).whenComplete((results, error) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (error != null) {
                         sender.sendMessage(Component.text("搜索失败：" + describeError(error), NamedTextColor.RED));
                         return;
                     }
                     if (sender instanceof Player player) {
-                        orchestrator.setSearchResults(player, results);
+                        orchestrator.setSearchQuery(player, searchKeyword, searchPage, results);
                     }
                     if (results.isEmpty()) {
                         sender.sendMessage(Component.text("没有找到结果", NamedTextColor.YELLOW));
                         return;
                     }
-                    sender.sendMessage(Component.text("搜索结果（" + results.size() + "）：", NamedTextColor.YELLOW));
+                    int size = plugin.searchService().pageSize();
+                    boolean hasNext = results.size() >= size;
+                    sender.sendMessage(Component.text("搜索结果（第 " + (searchPage + 1) + " 页，"
+                            + results.size() + " 条" + (hasNext ? "，还有更多" : "") + "）：", NamedTextColor.YELLOW));
                     for (int i = 0; i < results.size(); i++) {
                         var result = results.get(i);
                         boolean hasCover = result.coverUrl() != null && !result.coverUrl().isBlank();
@@ -202,8 +219,8 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                                 result.playable() ? NamedTextColor.WHITE : NamedTextColor.DARK_GRAY));
                     }
                     sender.sendMessage(Component.text(
-                            "点歌：/mineaudio queue add <序号>；立即播放：/mineaudio queue play <序号>",
-                            NamedTextColor.GRAY));
+                            "点歌：/mineaudio queue add <序号>；立即播放：/mineaudio queue play <序号>；翻页："
+                                    + "/mineaudio search next|prev", NamedTextColor.GRAY));
                 }));
     }
 

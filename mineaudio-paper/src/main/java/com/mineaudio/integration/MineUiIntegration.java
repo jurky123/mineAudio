@@ -216,7 +216,19 @@ public final class MineUiIntegration implements AudioUi {
             session.on("tab_now", action -> switchTab(player, "now", session));
             session.on("tab_search", action -> switchTab(player, "search", session));
             session.on("tab_lib", action -> switchTab(player, "lib", session));
-            session.on("search", action -> doSearch(player, action.string("text", ""), session));
+            session.on("search", action -> doSearch(player, action.string("text", ""), 0, session));
+            session.on("srch_prev", action -> {
+                String keyword = plugin.orchestrator().searchKeyword(player);
+                if (keyword != null) {
+                    doSearch(player, keyword, Math.max(0, plugin.orchestrator().searchPage(player) - 1), session);
+                }
+            });
+            session.on("srch_next", action -> {
+                String keyword = plugin.orchestrator().searchKeyword(player);
+                if (keyword != null) {
+                    doSearch(player, keyword, plugin.orchestrator().searchPage(player) + 1, session);
+                }
+            });
             for (int i = 0; i < SEARCH_SLOTS; i++) {
                 final int index = i;
                 session.on("srch_queue" + i, action -> queueResult(player, index, session, false));
@@ -432,6 +444,12 @@ public final class MineUiIntegration implements AudioUi {
             session.state("srch" + i + "_note", result.note());
             session.state("srch" + i + "_playable", result.playable());
         }
+        int page = plugin.orchestrator().searchPage(player);
+        boolean hasPrev = page > 0;
+        boolean hasNext = results.size() >= plugin.searchService().pageSize();
+        session.state("search_page", "第 " + (page + 1) + " 页");
+        session.state("search_prev", hasPrev);
+        session.state("search_next", hasNext);
         List<com.mineaudio.api.AudioTrack> queue = plugin.orchestrator().queue(player);
         session.state("queue_title", "点歌队列（" + queue.size() + "/" + plugin.orchestrator().queueLimit() + "）");
         for (int i = 0; i < QUEUE_SLOTS; i++) {
@@ -444,7 +462,7 @@ public final class MineUiIntegration implements AudioUi {
         }
     }
 
-    private void doSearch(Player player, String keyword, MineUiSession session) {
+    private void doSearch(Player player, String keyword, int page, MineUiSession session) {
         if (plugin.searchService() == null) {
             session.state("search_note", "搜索服务不可用");
             return;
@@ -453,15 +471,16 @@ public final class MineUiIntegration implements AudioUi {
             session.state("search_note", "请输入关键词");
             return;
         }
-        session.state("search_note", "搜索中…");
-        plugin.searchService().search(keyword).whenComplete((results, error) ->
+        session.state("search_note", "第 " + (page + 1) + " 页搜索中…");
+        plugin.searchService().search(keyword, page).whenComplete((results, error) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (error != null) {
                         session.state("search_note", "搜索失败：" + describeError(error));
                         return;
                     }
-                    plugin.orchestrator().setSearchResults(player, results);
-                    session.state("search_note", results.isEmpty() ? "没有找到结果" : "共 " + results.size() + " 条");
+                    plugin.orchestrator().setSearchQuery(player, keyword, page, results);
+                    session.state("search_note", results.isEmpty() ? "没有找到结果"
+                            : "第 " + (page + 1) + " 页 · " + results.size() + " 条");
                     push(player, session);
                 }));
     }

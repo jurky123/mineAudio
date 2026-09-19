@@ -56,7 +56,15 @@ public final class NeteaseSearch {
                 .build();
     }
 
+    public int pageSize() {
+        return maxResults;
+    }
+
     public CompletionStage<List<SearchResult>> search(String keyword) {
+        return search(keyword, 0);
+    }
+
+    public CompletionStage<List<SearchResult>> search(String keyword, int page) {
         if (!enabled) {
             return CompletableFuture.failedFuture(
                     new ResolveException(ResolveFailureKind.DISABLED, "搜索已禁用"));
@@ -69,7 +77,8 @@ public final class NeteaseSearch {
         if (trimmed.length() > MAX_KEYWORD_LENGTH) {
             trimmed = trimmed.substring(0, MAX_KEYWORD_LENGTH);
         }
-        String key = trimmed.toLowerCase();
+        int safePage = Math.max(0, page);
+        String key = trimmed.toLowerCase() + "#" + safePage;
         long now = System.currentTimeMillis();
         Cached cached = cache.get(key);
         if (cached != null && cached.expiresAt() > now) {
@@ -84,7 +93,7 @@ public final class NeteaseSearch {
         if (existing != null) {
             cache.put(key, fresh);
         }
-        requestSearch(trimmed).whenComplete((results, error) -> {
+        requestSearch(trimmed, safePage).whenComplete((results, error) -> {
             if (error != null) {
                 cache.remove(key, fresh);
                 future.completeExceptionally(unwrap(error));
@@ -95,9 +104,10 @@ public final class NeteaseSearch {
         return future;
     }
 
-    private CompletionStage<List<SearchResult>> requestSearch(String keyword) {
+    private CompletionStage<List<SearchResult>> requestSearch(String keyword, int page) {
         String url = "https://music.163.com/api/search/get/?type=1&limit=" + maxResults
-                + "&offset=0&s=" + URLEncoder.encode(keyword, StandardCharsets.UTF_8);
+                + "&offset=" + (page * maxResults)
+                + "&s=" + URLEncoder.encode(keyword, StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofMillis(timeoutMs))
                 .header("User-Agent", USER_AGENT)

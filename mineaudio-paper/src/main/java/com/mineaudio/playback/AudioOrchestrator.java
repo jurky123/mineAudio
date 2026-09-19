@@ -60,8 +60,11 @@ public final class AudioOrchestrator implements MineAudio {
     private final Map<UUID, ActiveSession> activeSessions = new LinkedHashMap<>();
     /** 点歌队列（每人一个，天然按玩家隔离）。 */
     private final Map<UUID, Deque<AudioTrack>> playQueues = new HashMap<>();
-    /** 玩家最近一次搜索结果（UI 与命令共用）。 */
-    private final Map<UUID, List<SearchResult>> searchResults = new HashMap<>();
+    /** 玩家最近一次搜索（关键词/页码/结果，UI 与命令共用）。 */
+    private record SearchQuery(String keyword, int page, List<SearchResult> results) {
+    }
+
+    private final Map<UUID, SearchQuery> searchQueries = new HashMap<>();
     private final Map<UUID, BukkitTask> finishTasks = new HashMap<>();
 
     public AudioOrchestrator(MineAudioPlugin plugin, TrackRegistry tracks, CueRegistry cues,
@@ -159,7 +162,7 @@ public final class AudioOrchestrator implements MineAudio {
     public void stopAll(Audience audience) {
         for (Player player : audience.players()) {
             playQueues.remove(player.getUniqueId());
-        searchResults.remove(player.getUniqueId());
+        searchQueries.remove(player.getUniqueId());
         PlayerAudioState state = states.remove(player.getUniqueId());
             if (state == null) continue;
             for (PlaybackSession playback : state.sessions()) {
@@ -336,12 +339,23 @@ public final class AudioOrchestrator implements MineAudio {
         playQueues.remove(player.getUniqueId());
     }
 
-    public void setSearchResults(Player player, List<SearchResult> results) {
-        searchResults.put(player.getUniqueId(), List.copyOf(results));
+    public void setSearchQuery(Player player, String keyword, int page, List<SearchResult> results) {
+        searchQueries.put(player.getUniqueId(), new SearchQuery(keyword, page, List.copyOf(results)));
+    }
+
+    public String searchKeyword(Player player) {
+        SearchQuery query = searchQueries.get(player.getUniqueId());
+        return query == null ? null : query.keyword();
+    }
+
+    public int searchPage(Player player) {
+        SearchQuery query = searchQueries.get(player.getUniqueId());
+        return query == null ? 0 : query.page();
     }
 
     public List<SearchResult> searchResults(Player player) {
-        return searchResults.getOrDefault(player.getUniqueId(), List.of());
+        SearchQuery query = searchQueries.get(player.getUniqueId());
+        return query == null ? List.of() : query.results();
     }
 
     /** 把搜索结果转换为可播放曲目（动态曲目，不进曲库）。 */
@@ -384,7 +398,7 @@ public final class AudioOrchestrator implements MineAudio {
 
     public void onQuit(Player player) {
         playQueues.remove(player.getUniqueId());
-        searchResults.remove(player.getUniqueId());
+        searchQueries.remove(player.getUniqueId());
         PlayerAudioState state = states.remove(player.getUniqueId());
         if (state != null) {
             for (PlaybackSession playback : state.sessions()) {
@@ -418,7 +432,7 @@ public final class AudioOrchestrator implements MineAudio {
         activeSessions.clear();
         states.clear();
         playQueues.clear();
-        searchResults.clear();
+        searchQueries.clear();
     }
 
     /** /mineaudio debug：列出该玩家当前会话。 */

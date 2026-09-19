@@ -743,6 +743,39 @@
               ]
             },
             {
+              "type": "row",
+              "gap": 6,
+              "justify": "center",
+              "children": [
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "上一页",
+                  "action": "srch_prev",
+                  "width": 56,
+                  "height": 16,
+                  "hoverScale": 1.08,
+                  "visible": "{state.search_prev}"
+                },
+                {
+                  "type": "text",
+                  "text": "{state.search_page}",
+                  "color": "#C0C0C0",
+                  "scale": 0.85
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "下一页",
+                  "action": "srch_next",
+                  "width": 56,
+                  "height": 16,
+                  "hoverScale": 1.08,
+                  "visible": "{state.search_next}"
+                }
+              ]
+            },
+            {
               "type": "column",
               "gap": 4,
               "padding": 6,
