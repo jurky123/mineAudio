@@ -12,9 +12,10 @@ public record ResolveResult(
         String title,
         String artist,
         long durationMs,
-        Instant expiresAt) {
+        Instant expiresAt,
+        String coverUrl) {
 
     public static ResolveResult url(URI streamUrl) {
-        return new ResolveResult(streamUrl, null, null, 0, null);
+        return new ResolveResult(streamUrl, null, null, 0, null, null);
     }
 }

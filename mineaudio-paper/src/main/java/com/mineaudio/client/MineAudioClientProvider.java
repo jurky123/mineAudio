@@ -87,6 +87,7 @@ public final class MineAudioClientProvider implements StreamProvider {
                     fallback(player, request, handle, error);
                     return;
                 }
+                handle.setCover(result.coverUrl());
                 handle.attach(sendPlay(player, request, result));
             });
         });
@@ -115,6 +116,7 @@ public final class MineAudioClientProvider implements StreamProvider {
                 duration,
                 title,
                 artist,
+                result.coverUrl(),
                 null);
         protocol.send(player, Envelope.session(PacketType.PLAY, request.sessionId().toString(),
                 request.timing().revision(), ProtocolCodec.data(play)));
@@ -122,7 +124,7 @@ public final class MineAudioClientProvider implements StreamProvider {
             plugin.getLogger().info("[client] -> " + player.getName() + " PLAY session=" + request.sessionId()
                     + " url=" + result.streamUrl());
         }
-        return new ClientStreamHandle(plugin, protocol, player, request.sessionId());
+        return new ClientStreamHandle(plugin, protocol, player, request.sessionId(), result.coverUrl());
     }
 
     /** 解析失败：上报分类错误，交由 UI/PAPI 展示（无外部插件降级）。 */

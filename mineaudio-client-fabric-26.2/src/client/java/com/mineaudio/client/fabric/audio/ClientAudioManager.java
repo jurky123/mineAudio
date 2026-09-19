@@ -235,6 +235,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             case "playing" -> session.isPresentationPlaying();
             case "buffering" -> session.isBuffering();
             case "volume" -> Math.round(session.currentVolume() * 100);
+            case "cover" -> session.coverUrl;
             case "visible" -> duration > 0 && session.hasAudibleContent();
             default -> null;
         };
@@ -300,6 +301,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final long serverStartTimeMs;
         private final String bus;
         private final long durationHintMs;
+        private final String coverUrl;
         private final Packets.Play.Spatial spatial;
         /** 媒体内容标识（不含会话身份），跨会话复用缓存。 */
         private final String cacheKey;
@@ -352,6 +354,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             this.serverStartTimeMs = play.serverStartTime();
             this.bus = play.bus();
             this.durationHintMs = play.durationHintMs();
+            this.coverUrl = play.coverUrl();
             this.spatial = play.spatial();
             this.volume = Math.max(0f, Math.min(1f, play.volume()));
         }

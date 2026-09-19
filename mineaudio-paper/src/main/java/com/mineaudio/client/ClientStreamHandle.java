@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import com.mineaudio.MineAudioPlugin;
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackState;
+import com.mineaudio.playback.CoverArt;
 import com.mineaudio.playback.StatusAware;
 import com.mineaudio.protocol.Envelope;
 import com.mineaudio.protocol.PacketType;
@@ -15,20 +16,28 @@ import com.mineaudio.protocol.Packets;
 import com.mineaudio.protocol.ProtocolCodec;
 
 /** 单个玩家的客户端流会话句柄：指令下发 + 状态读服务端缓存。 */
-final class ClientStreamHandle implements PlaybackHandle, StatusAware {
+final class ClientStreamHandle implements PlaybackHandle, StatusAware, CoverArt {
 
     private final MineAudioPlugin plugin;
     private final ClientProtocolService protocol;
     private final Player player;
     private final UUID sessionId;
+    private final String coverUrl;
     private int revision = 1;
     private PlaybackState localState = PlaybackState.PENDING;
 
-    ClientStreamHandle(MineAudioPlugin plugin, ClientProtocolService protocol, Player player, UUID sessionId) {
+    ClientStreamHandle(MineAudioPlugin plugin, ClientProtocolService protocol, Player player, UUID sessionId,
+                        String coverUrl) {
         this.plugin = plugin;
         this.protocol = protocol;
         this.player = player;
         this.sessionId = sessionId;
+        this.coverUrl = coverUrl;
+    }
+
+    @Override
+    public String coverUrl() {
+        return coverUrl;
     }
 
     @Override

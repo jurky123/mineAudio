@@ -12,16 +12,25 @@
       "align": "center",
       "children": [
         {
-          "type": "item",
-          "item": "minecraft:music_disc_cat",
-          "scale": 1.2,
-          "cycle": {
-            "interval": 1.0,
-            "items": [
-              "minecraft:music_disc_cat",
-              "minecraft:music_disc_13"
-            ]
-          }
+          "type": "stack",
+          "width": 40,
+          "height": 40,
+          "children": [
+            {
+              "type": "image",
+              "url": "{state.cover}",
+              "width": 40,
+              "height": 40,
+              "radius": 20,
+              "visible": "{state.cover_visible}"
+            },
+            {
+              "type": "item",
+              "item": "minecraft:music_disc_cat",
+              "scale": 1.2,
+              "visible": "{state.cover_fallback}"
+            }
+          ]
         },
         {
           "type": "column",

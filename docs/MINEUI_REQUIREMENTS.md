@@ -182,4 +182,19 @@ public interface MineUiClientBridge {
 
 ---
 
+## 9. FR-13 封面旋转动画（2026-09-19 新增，待 MineUI 设计）
+
+MineAudio 已用 `image` + `{state.cover}` 展示网易封面（圆形用 `radius` 实现，`music.126.net` 已白名单）。
+希望补一个**通用持续旋转**动画属性，让任意节点按本地时间旋转（唱片效果），例如：
+
+```json
+{ "type": "image", "url": "{state.cover}", "width": 56, "height": 56, "radius": 28, "spin": 8.0 }
+```
+
+- `spin`：秒/圈，纯客户端本地时间驱动，不占网络；`0`/缺省不旋转
+- 可选 `spinPlaying`（`{state.playing}` 绑定）：false 时冻结角度，供暂停场景使用
+- 旧客户端遇到未知字段安全忽略
+
+---
+
 落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。

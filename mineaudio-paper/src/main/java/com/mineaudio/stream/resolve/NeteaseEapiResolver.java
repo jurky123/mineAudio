@@ -26,6 +26,8 @@ public final class NeteaseEapiResolver implements StreamResolver {
 
     static final String API_PATH = "/api/song/enhance/player/url/v1";
     static final String ENDPOINT = "https://music.163.com/eapi" + API_PATH;
+    /** 曲目详情（封面/标题/歌手），响应为明文 JSON（部分环境会加密，decodeBody 两者兼容）。 */
+    static final String DETAIL_PATH = "/api/v3/song/detail";
     static final String SOURCE_ID = "netease";
 
     private static final Set<String> SOURCES = Set.of("netease", "ncmlite");
@@ -113,7 +115,9 @@ public final class NeteaseEapiResolver implements StreamResolver {
                         return;
                     }
                     try {
-                        future.complete(parse(response.statusCode(), decodeBody(response.body())));
+                        ResolveResult parsed = parse(response.statusCode(), decodeBody(response.body()));
+                        enrichWithDetail(id, parsed).whenComplete((enriched, enrichError) ->
+                                future.complete(enrichError == null && enriched != null ? enriched : parsed));
                     } catch (ResolveException e) {
                         if (retryOnAuth && e.kind() == ResolveFailureKind.ACCOUNT_NOT_ENTITLED) {
                             cache.invalidate(key);
@@ -170,7 +174,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
         long expiSeconds = item.has("expi") ? item.get("expi").getAsLong() : 0;
         Instant expiresAt = expiSeconds > 0 ? Instant.now().plusSeconds(expiSeconds) : null;
         long durationMs = item.has("time") ? item.get("time").getAsLong() : 0;
-        return new ResolveResult(upgradeToHttps(url), null, null, durationMs, expiresAt);
+        return new ResolveResult(upgradeToHttps(url), null, null, durationMs, expiresAt, null);
     }
 
     /** 网易 CDN 常返回 http 链接；升级为 https（客户端防火墙要求，CDN 实测支持）。 */
@@ -186,6 +190,64 @@ public final class NeteaseEapiResolver implements StreamResolver {
     }
 
     /** eapi 响应默认 AES-ECB 加密；解密失败时按明文处理（部分错误响应是明文 JSON）。 */
+    /** 拉曲目详情补封面/标题/歌手；失败一律回退 base，不影响播放。 */
+    private CompletionStage<ResolveResult> enrichWithDetail(String id, ResolveResult base) {
+        String json = "{\"c\":\"[{\\\"id\\\":\\\"" + id + "\\\"}]\"}";
+        HttpRequest request = HttpRequest.newBuilder(URI.create("https://music.163.com/eapi" + DETAIL_PATH))
+                .timeout(Duration.ofMillis(Math.max(500, config.timeoutMs())))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("User-Agent", USER_AGENT)
+                .header("Referer", "https://music.163.com")
+                .header("X-Real-IP", "118.88.88.88")
+                .header("Cookie", cookieHeader())
+                .POST(HttpRequest.BodyPublishers.ofString(EapiCrypto.body(DETAIL_PATH, json)))
+                .build();
+        CompletableFuture<ResolveResult> enriched = new CompletableFuture<>();
+        http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+                .whenComplete((response, error) -> {
+                    if (error != null || response.statusCode() != 200) {
+                        enriched.complete(base);
+                        return;
+                    }
+                    try {
+                        enriched.complete(mergeDetail(base, decodeBody(response.body())));
+                    } catch (Exception e) {
+                        enriched.complete(base);
+                    }
+                });
+        return enriched;
+    }
+
+    /** 解析 song/detail 响应，失败字段回退 base。 */
+    static ResolveResult mergeDetail(ResolveResult base, String body) {
+        try {
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+            JsonArray songs = root.has("songs") ? root.getAsJsonArray("songs") : null;
+            if (songs == null || songs.isEmpty()) return base;
+            JsonObject song = songs.get(0).getAsJsonObject();
+            String title = song.has("name") && !song.get("name").isJsonNull()
+                    ? song.get("name").getAsString() : base.title();
+            String artist = base.artist();
+            if (song.has("ar") && song.get("ar").isJsonArray() && !song.getAsJsonArray("ar").isEmpty()) {
+                JsonObject first = song.getAsJsonArray("ar").get(0).getAsJsonObject();
+                if (first.has("name") && !first.get("name").isJsonNull()) {
+                    artist = first.get("name").getAsString();
+                }
+            }
+            String cover = base.coverUrl();
+            if (song.has("al") && song.get("al").isJsonObject()) {
+                JsonObject album = song.getAsJsonObject("al");
+                if (album.has("picUrl") && !album.get("picUrl").isJsonNull()) {
+                    cover = album.get("picUrl").getAsString();
+                }
+            }
+            return new ResolveResult(base.streamUrl(), title, artist, base.durationMs(),
+                    base.expiresAt(), cover);
+        } catch (Exception e) {
+            return base;
+        }
+    }
+
     static String decodeBody(byte[] body) {
         try {
             return EapiCrypto.decrypt(body);

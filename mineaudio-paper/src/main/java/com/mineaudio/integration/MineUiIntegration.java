@@ -27,6 +27,7 @@ import com.mineaudio.api.Audience;
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackState;
 import com.mineaudio.client.ClientPlaybackStateCache;
+import com.mineaudio.playback.CoverArt;
 import com.mineaudio.playback.PlaybackSession;
 import com.mineaudio.playback.StatusAware;
 import com.mineaudio.ui.AudioUi;
@@ -311,6 +312,9 @@ public final class MineUiIntegration implements AudioUi {
         String status = "";
         if (music == null) {
             lastStatus.remove(player.getUniqueId());
+            session.state("cover", "");
+            session.state("cover_visible", false);
+            session.state("cover_fallback", true);
             session.state("title", "暂无音乐");
             session.state("subtitle", "在下方列表点播，或使用 /mineaudio play");
             session.state("state", "IDLE");
@@ -322,6 +326,10 @@ public final class MineUiIntegration implements AudioUi {
                     ? track.id().asString() : track.metadata().title());
             session.state("subtitle", track.metadata().author().isBlank()
                     ? track.id().asString() : track.metadata().author());
+            String cover = coverOf(music.handle());
+            session.state("cover", cover == null ? "" : cover);
+            session.state("cover_visible", cover != null && !cover.isBlank());
+            session.state("cover_fallback", cover == null || cover.isBlank());
             session.state("state", displayState(music, progress));
             session.state("backend", music.backend() == null ? "-" : music.backend());
             session.state("origin", music.origin().name());
@@ -411,6 +419,10 @@ public final class MineUiIntegration implements AudioUi {
         ClientPlaybackStateCache.Snapshot progress = music == null ? null : snapshotOf(player, music);
         if (music != null) {
             hud.state("active", true);
+            String cover = coverOf(music.handle());
+            hud.state("cover", cover == null ? "" : cover);
+            hud.state("cover_visible", cover != null && !cover.isBlank());
+            hud.state("cover_fallback", cover == null || cover.isBlank());
             AudioTrack track = music.track();
             hud.state("title", track.metadata().title().isBlank()
                     ? track.id().asString() : track.metadata().title());
@@ -422,6 +434,9 @@ public final class MineUiIntegration implements AudioUi {
             hud.state("status_visible", !status.isBlank());
         } else {
             hud.state("active", false);
+            hud.state("cover", "");
+            hud.state("cover_visible", false);
+            hud.state("cover_fallback", true);
             hud.state("title", "未在播放");
             hud.state("subtitle", "");
             hud.state("state", "IDLE");
@@ -563,6 +578,10 @@ public final class MineUiIntegration implements AudioUi {
 
     private float volumeOf(Player player) {
         return volumes.computeIfAbsent(player.getUniqueId(), ignored -> 1f);
+    }
+
+    private static String coverOf(PlaybackHandle handle) {
+        return handle instanceof CoverArt art ? art.coverUrl() : null;
     }
 
     private static String statusNote(PlaybackHandle handle) {

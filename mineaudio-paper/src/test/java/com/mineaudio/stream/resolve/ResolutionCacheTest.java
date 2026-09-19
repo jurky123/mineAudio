@@ -18,7 +18,7 @@ class ResolutionCacheTest {
     private final ResolutionCache cache = new ResolutionCache(() -> now);
 
     private static ResolveResult result(Instant expiresAt) {
-        return new ResolveResult(URI.create("https://example.com/a.mp3"), null, null, 0, expiresAt);
+        return new ResolveResult(URI.create("https://example.com/a.mp3"), null, null, 0, expiresAt, null);
     }
 
     @Test

@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.mineaudio.api.PlaybackHandle;
 import com.mineaudio.api.PlaybackState;
+import com.mineaudio.playback.CoverArt;
 import com.mineaudio.playback.StatusAware;
 
 /**
@@ -13,7 +14,7 @@ import com.mineaudio.playback.StatusAware;
  * 解析完成前的暂停/定位/音量会被记住并在挂接时补发。
  * 使用与 PLAY 相同的 sessionId，保证服务端按句柄 ID 能查到对应会话快照。
  */
-final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware {
+final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware, CoverArt {
 
     private final UUID id;
     private final AtomicReference<PlaybackHandle> delegate = new AtomicReference<>();
@@ -21,6 +22,7 @@ final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware {
     private volatile boolean failed;
     private volatile String failureKind;
     private volatile String failureMessage;
+    private volatile String coverUrl;
     private volatile Boolean pendingPaused;
     private volatile Duration pendingSeek;
     private volatile Float pendingVolume;
@@ -82,6 +84,17 @@ final class ResolvingPlaybackHandle implements PlaybackHandle, StatusAware {
 
     boolean cancelled() {
         return cancelled;
+    }
+
+    void setCover(String coverUrl) {
+        this.coverUrl = coverUrl;
+    }
+
+    @Override
+    public String coverUrl() {
+        PlaybackHandle current = delegate.get();
+        if (current instanceof CoverArt aware) return aware.coverUrl();
+        return coverUrl;
     }
 
     void fail(String kind, String message) {

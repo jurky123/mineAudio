@@ -59,9 +59,25 @@
           },
           "children": [
             {
-              "type": "item",
-              "item": "minecraft:music_disc_cat",
-              "scale": 1.9
+              "type": "stack",
+              "width": 56,
+              "height": 56,
+              "children": [
+                {
+                  "type": "image",
+                  "url": "{state.cover}",
+                  "width": 56,
+                  "height": 56,
+                  "radius": 28,
+                  "visible": "{state.cover_visible}"
+                },
+                {
+                  "type": "item",
+                  "item": "minecraft:music_disc_cat",
+                  "scale": 1.9,
+                  "visible": "{state.cover_fallback}"
+                }
+              ]
             },
             {
               "type": "column",

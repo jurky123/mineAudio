@@ -17,7 +17,7 @@ class ProtocolCodecTest {
                 "mineaudio:night_song", "netease", "123456", "https://cdn.example.com/a.mp3",
                 Map.of("Referer", "https://music.163.com/"), 1, 1790000000000L,
                 183748372L, 0L, 0.8f, "MUSIC", 500, 243000L,
-                "夜曲", "周杰伦", null);
+                "夜曲", "周杰伦", "https://p1.music.126.net/cover.jpg", null);
         Envelope envelope = Envelope.session(PacketType.PLAY, "a4d8", 1, ProtocolCodec.data(play));
         Envelope decoded = ProtocolCodec.decode(ProtocolCodec.encode(envelope));
 
@@ -61,16 +61,16 @@ class ProtocolCodecTest {
     @Test
     void validatesPlayLimits() throws Exception {
         Packets.Play ok = new Packets.Play("id", "netease", "1", "https://cdn.example.com/a.mp3",
-                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null);
+                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null, null);
         ProtocolCodec.validatePlay(ok);
 
         Packets.Play tooLongUrl = new Packets.Play("id", "netease", "1",
                 "https://cdn.example.com/" + "a".repeat(ProtocolLimits.MAX_URL_LENGTH),
-                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null);
+                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null, null);
         assertThrows(ProtocolException.class, () -> ProtocolCodec.validatePlay(tooLongUrl));
 
         Packets.Play noUrl = new Packets.Play("id", "netease", "1", null,
-                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null);
+                Map.of(), 1, 0, 0, 0, 1f, "MUSIC", 0, 0, null, null, null, null);
         assertThrows(ProtocolException.class, () -> ProtocolCodec.validatePlay(noUrl));
     }
 

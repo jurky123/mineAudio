@@ -47,6 +47,7 @@ public final class Packets {
             long durationHintMs,
             String title,
             String artist,
+            String coverUrl,
             Spatial spatial) {
 
         public record Spatial(String world, double x, double y, double z, double radius, String rolloff) {
