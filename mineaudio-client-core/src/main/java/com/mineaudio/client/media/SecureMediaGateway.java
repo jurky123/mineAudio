@@ -52,7 +52,7 @@ public final class SecureMediaGateway implements AutoCloseable {
                 .build();
         this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         this.server.createContext("/media/", this::handle);
-        this.executor = Executors.newFixedThreadPool(2, runnable -> {
+        this.executor = Executors.newFixedThreadPool(6, runnable -> {
             Thread thread = new Thread(runnable, "MineAudio-MediaGateway");
             thread.setDaemon(true);
             return thread;

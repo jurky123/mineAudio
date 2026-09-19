@@ -168,6 +168,12 @@ public final class MineUiIntegration implements AudioUi {
             if (!api.hasClient(player) || !api.supportsServerUi(player)) return false;
             close(player);
             boolean local = useLocalPage(player);
+            if (plugin.debug()) {
+                PlaybackSession current = plugin.orchestrator().currentMusic(player);
+                plugin.getLogger().info("[ui] " + player.getName() + " 打开页面 local=" + local
+                        + " backend=" + (current == null ? "-" : current.backend())
+                        + " caps=" + api.capabilities(player));
+            }
             JsonObject definition = local && pageLocal != null ? pageLocal : page;
             String view = local && pageLocal != null ? "player-local" : "player";
             MineUiSession session = api.open(plugin, player, APP, view, definition);
@@ -284,17 +290,23 @@ public final class MineUiIntegration implements AudioUi {
     // ---------- 状态推送 ----------
 
     private void push(Player player, MineUiSession session) {
-        // 播放后端变化时切换“本地绑定 / 服务端推送”页面（打开时只决定一次是不够的）
+        PlaybackSession music = plugin.orchestrator().currentMusic(player);
+        // 播放后端变化时切换“本地绑定 / 服务端推送”页面；空闲（无曲目）时不抖
         Boolean mode = pageLocalModes.get(player.getUniqueId());
-        if (mode != null && mode != useLocalPage(player)) {
+        boolean wantLocal = useLocalPage(player);
+        if (mode != null && music != null && mode != wantLocal) {
             pageLocalModes.remove(player.getUniqueId());
+            if (plugin.debug()) {
+                plugin.getLogger().info("[ui] " + player.getName() + " 页面模式切换："
+                        + (Boolean.TRUE.equals(mode) ? "本地绑定" : "服务端推送") + " -> "
+                        + (wantLocal ? "本地绑定" : "服务端推送") + "（backend=" + music.backend() + "）");
+            }
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (player.isOnline()) open(player);
             });
             return;
         }
         boolean localPage = Boolean.TRUE.equals(mode);
-        PlaybackSession music = plugin.orchestrator().currentMusic(player);
         ClientPlaybackStateCache.Snapshot progress = music == null ? null : snapshotOf(player, music);
         String status = "";
         if (music == null) {

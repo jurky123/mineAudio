@@ -335,6 +335,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile long presentAnchorMs;
         private volatile long presentAnchorAtNanos;
         private volatile boolean presentRunning;
+        /** 起播时真正会先被听到的媒体位置（startPosition，或迟到跳播后的位置）。 */
+        private volatile long startAnchorMs;
 
         Session(String sessionId, Packets.Play play) {
             this.id = sessionId;
@@ -410,6 +412,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (!firstPcm.get()) return;
             started = true;
             long late = serverStartTimeMs > 0 ? now - serverStartTimeMs : 0;
+            long anchor = startPositionMs;
             // 只在迟到窗口合理时跳播；时钟未同步或迟到过久则从头播，避免 seek 到越界位置
             if (synced && late > 50 && late < 3000) {
                 com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
@@ -417,7 +420,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 decoder.seek(startPositionMs + late);
                 ring.clear();
                 stream.reset();
+                anchor = startPositionMs + late;
             }
+            startAnchorMs = anchor;
             ensureChannel();
         }
 
@@ -443,12 +448,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     channel.setVolume(effectiveVolume());
                     applySpatial(channel);
                     channel.play();
-                    // 通道起播时，真正先播放的是环形缓冲头部，而不是解码位置
-                    long head = Math.max(0, decoder.positionMs() - ring.available() / BYTES_PER_MS);
-                    anchorPresentation(head);
+                    // OpenAL 起播会立刻预取缓冲，不能再用“解码位置-环形缓冲”推算；
+                    // 真正先被听到的是起播位置本身（迟到时为跳播后的位置）
+                    anchorPresentation(startAnchorMs);
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                             "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B anchor={}ms",
-                            id, effectiveVolume(), bus, ring.available(), head);
+                            id, effectiveVolume(), bus, ring.available(), startAnchorMs);
                 });
             }).exceptionally(t -> {
                 fail("CHANNEL_ERROR", t.toString());
