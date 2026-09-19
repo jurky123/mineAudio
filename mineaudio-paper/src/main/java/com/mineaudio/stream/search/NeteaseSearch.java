@@ -43,16 +43,19 @@ public final class NeteaseSearch {
     private final int timeoutMs;
     private final int maxResults;
     private final int coverPx;
+    private final com.mineaudio.stream.resolve.SongMetaCache songMetaCache;
     private final Supplier<String> cookieSupplier;
     private final HttpClient http;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
 
     public NeteaseSearch(boolean enabled, int timeoutMs, int maxResults, int coverPx,
+                         com.mineaudio.stream.resolve.SongMetaCache songMetaCache,
                          Supplier<String> cookieSupplier) {
         this.enabled = enabled;
         this.timeoutMs = Math.max(500, timeoutMs);
         this.maxResults = Math.max(1, Math.min(10, maxResults));
         this.coverPx = coverPx;
+        this.songMetaCache = songMetaCache;
         this.cookieSupplier = cookieSupplier;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(this.timeoutMs))
@@ -192,7 +195,9 @@ public final class NeteaseSearch {
                 .thenApply(response -> {
                     if (response.statusCode() != 200) return base;
                     try {
-                        return mergeDetail(base, decodeBody(response.body()), coverPx);
+                        List<SearchResult> merged = mergeDetail(base, decodeBody(response.body()), coverPx);
+                        warmMetaCache(merged);
+                        return merged;
                     } catch (Exception e) {
                         return base;
                     }
@@ -244,6 +249,13 @@ public final class NeteaseSearch {
                     result.durationMs(), result.playable(), result.note()));
         }
         return merged;
+    }
+
+    /** 搜索补齐的元数据回写共享缓存：同曲目的后续 URL 解析直接命中，不必再拉详情。 */
+    private void warmMetaCache(List<SearchResult> results) {
+        for (SearchResult result : results) {
+            songMetaCache.put("netease:" + result.id(), result.title(), result.artist(), result.coverUrl());
+        }
     }
 
     private static String decodeBody(byte[] body) {

@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.mineaudio.client.decode.AudioDecoder;
+import com.mineaudio.client.decode.SeekStatus;
 import com.sedmelluq.discord.lavaplayer.format.AudioDataFormat;
 import com.sedmelluq.discord.lavaplayer.format.StandardAudioDataFormats;
 import com.sedmelluq.discord.lavaplayer.player.AudioConfiguration;
@@ -185,12 +186,17 @@ public final class LavaPlayerDecoder implements AudioDecoder {
     }
 
     @Override
-    public void seek(long positionMs) {
+    public SeekStatus seek(long positionMs) {
         generation.incrementAndGet();
         AudioTrack t = track;
-        if (t != null && t.isSeekable()) {
-            t.setPosition(Math.max(0, positionMs));
+        if (t == null) {
+            return SeekStatus.NOT_READY;
         }
+        if (!t.isSeekable()) {
+            return SeekStatus.NOT_SEEKABLE;
+        }
+        t.setPosition(Math.max(0, positionMs));
+        return SeekStatus.APPLIED;
     }
 
     /** 当前解码代际；Sink 收到帧后据此判断是否已被 seek 作废。 */

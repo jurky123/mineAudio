@@ -185,7 +185,7 @@ public final class MineAudioPlugin extends JavaPlugin {
         boolean searchEnabled = neteaseEnabled && getConfig().getBoolean("search.enabled", true);
         int maxResults = getConfig().getInt("search.max-results", 6);
         searchService = new com.mineaudio.stream.search.NeteaseSearch(
-                searchEnabled, timeoutMs, maxResults, coverPx, netease::cookieHeader);
+                searchEnabled, timeoutMs, maxResults, coverPx, netease.songMetaCache(), netease::cookieHeader);
         if (neteaseEnabled) {
             getLogger().info("网易解析器已启用（凭证：" + (netease.hasCredential() ? "已配置" : "未配置，仅匿名")
                     + "，音质：" + level + "）");

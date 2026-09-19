@@ -35,13 +35,26 @@ class PlaybackClockTest {
     }
 
     @Test
+    void seekRequestDoesNotJump() throws Exception {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onOutputStarted(0);
+        Thread.sleep(30);
+        long before = clock.positionMs();
+        clock.onSeekRequested();
+        // 请求阶段位置保持不动（不跳转到目标），只进入等待
+        assertEquals(before, clock.positionMs());
+        assertEquals(PlaybackClock.State.BUFFERING, clock.state());
+        assertFalse(clock.playing());
+    }
+
+    @Test
     void seekWhilePlayingGoesThroughBuffering() {
         PlaybackClock clock = new PlaybackClock();
         clock.reset(180_000);
         clock.onOutputStarted(0);
-        clock.onSeekRequested(90_000);
+        clock.onSeekRequested();
         assertEquals(PlaybackClock.State.BUFFERING, clock.state());
-        assertEquals(90_000, clock.positionMs());
         clock.onSeekApplied(90_000);
         assertEquals(PlaybackClock.State.PLAYING, clock.state());
         assertTrue(clock.positionMs() >= 90_000);
@@ -53,7 +66,7 @@ class PlaybackClockTest {
         clock.reset(180_000);
         clock.onOutputStarted(0);
         clock.onPause();
-        clock.onSeekRequested(60_000);
+        clock.onSeekRequested();
         assertEquals(PlaybackClock.State.PAUSED, clock.state());
         clock.onSeekApplied(60_000);
         assertEquals(PlaybackClock.State.PAUSED, clock.state());
@@ -121,5 +134,31 @@ class PlaybackClockTest {
         clock.reset(1_000);
         clock.onOutputStarted(999);
         assertTrue(clock.positionMs() <= 1_000);
+    }
+
+    @Test
+    void pauseDuringLoadingKeepsIntentAndResumesNormally() {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onPause(); // LOADING 暂停：只记意图
+        assertTrue(clock.paused());
+        assertEquals(PlaybackClock.State.LOADING, clock.state());
+        clock.onOutputStarted(0); // 有意图时输出起播仍保持暂停
+        assertEquals(PlaybackClock.State.PAUSED, clock.state());
+        assertFalse(clock.playing());
+        clock.onResume();
+        assertFalse(clock.paused());
+        assertEquals(PlaybackClock.State.BUFFERING, clock.state());
+        clock.onSeekApplied(0);
+        assertEquals(PlaybackClock.State.PLAYING, clock.state());
+    }
+
+    @Test
+    void resumeIsIdempotentWhenNotPaused() {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onResume(); // 未暂停时恢复不做任何事
+        assertEquals(PlaybackClock.State.LOADING, clock.state());
+        assertFalse(clock.paused());
     }
 }

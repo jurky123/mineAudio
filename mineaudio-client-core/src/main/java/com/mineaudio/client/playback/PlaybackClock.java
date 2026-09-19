@@ -34,6 +34,11 @@ public final class PlaybackClock {
     private boolean running;
     private long durationMs;
     private String errorCode;
+    /**
+     * 用户暂停意图：与“输出阶段”分离。LOADING 时暂停只记住意图（输出阶段不变），
+     * 输出就绪或恢复时按意图决定是否真正进入 PAUSED/继续等待。
+     */
+    private boolean userPaused;
 
     public synchronized void reset(long durationMs) {
         this.state = State.LOADING;
@@ -42,6 +47,7 @@ public final class PlaybackClock {
         this.running = false;
         this.durationMs = Math.max(0, durationMs);
         this.errorCode = null;
+        this.userPaused = false;
     }
 
     public synchronized void setDuration(long durationMs) {
@@ -52,29 +58,12 @@ public final class PlaybackClock {
         return durationMs;
     }
 
-    /** 首批 PCM 真正开始输出：以该媒体位置为锚进入 PLAYING。 */
+    /** 首批 PCM 真正开始输出：无暂停意图时进入 PLAYING，有意图时保持 PAUSED。 */
     public synchronized void onOutputStarted(long mediaPositionMs) {
         if (state == State.FINISHED || state == State.ERROR) return;
         anchor(mediaPositionMs);
-        state = State.PLAYING;
-        running = true;
-    }
-
-    /** seek 请求：立即冻结在目标位置显示，等待目标帧到达。暂停中保持 PAUSED。 */
-    public synchronized void onSeekRequested(long targetMs) {
-        if (state == State.FINISHED || state == State.ERROR) return;
-        anchor(targetMs);
-        running = false;
-        if (state != State.PAUSED) {
-            state = State.BUFFERING;
-        }
-    }
-
-    /** 目标位置首帧到达：锚定并恢复输出（暂停中则保持冻结在目标）。 */
-    public synchronized void onSeekApplied(long targetMs) {
-        if (state == State.FINISHED || state == State.ERROR) return;
-        anchor(targetMs);
-        if (state == State.PAUSED) {
+        if (userPaused) {
+            state = State.PAUSED;
             running = false;
         } else {
             state = State.PLAYING;
@@ -82,15 +71,43 @@ public final class PlaybackClock {
         }
     }
 
-    /** 暂停：冻结当前位置；重复调用无副作用。 */
+    /**
+     * seek 请求：只记录（由调用方保存目标），时钟冻结在旧位置，不跳转到目标。
+     * 真正生效由目标帧到达时的 {@link #onSeekApplied} 确认，避免“请求即成功”。
+     */
+    public synchronized void onSeekRequested() {
+        if (state == State.FINISHED || state == State.ERROR) return;
+        freeze();
+        running = false;
+        if (state != State.PAUSED) {
+            state = State.BUFFERING;
+        }
+    }
+
+    /** 目标位置首帧到达：锚定并恢复输出（有暂停意图则保持暂停）。 */
+    public synchronized void onSeekApplied(long targetMs) {
+        if (state == State.FINISHED || state == State.ERROR) return;
+        anchor(targetMs);
+        if (userPaused || state == State.PAUSED) {
+            state = State.PAUSED;
+            running = false;
+        } else {
+            state = State.PLAYING;
+            running = true;
+        }
+    }
+
+    /** 暂停：记录意图；PLAYING/BUFFERING 同时冻结并进入 PAUSED，LOADING 只记住意图。 */
     public synchronized void onPause() {
+        userPaused = true;
         if (state != State.PLAYING && state != State.BUFFERING) return;
         freeze();
         state = State.PAUSED;
     }
 
-    /** 恢复：进入 BUFFERING，等重新定位后的首帧再进入 PLAYING。 */
+    /** 恢复：清除意图；PAUSED 进入 BUFFERING，等重新定位后的首帧再进入 PLAYING。 */
     public synchronized void onResume() {
+        userPaused = false;
         if (state != State.PAUSED) return;
         state = State.BUFFERING;
         running = false;
@@ -131,8 +148,9 @@ public final class PlaybackClock {
         return state == State.PLAYING;
     }
 
+    /** 用户暂停意图（输出阶段可能仍是 LOADING/BUFFERING）。 */
     public synchronized boolean paused() {
-        return state == State.PAUSED;
+        return userPaused;
     }
 
     public synchronized boolean finished() {

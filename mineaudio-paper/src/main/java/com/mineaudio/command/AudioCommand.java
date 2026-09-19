@@ -193,35 +193,50 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
         final int searchPage = page;
         sender.sendMessage(Component.text("正在搜索：" + keyword + "（第 " + (page + 1) + " 页）…",
                 NamedTextColor.GRAY));
-        plugin.searchService().search(keyword, page).whenComplete((results, error) ->
+        if (sender instanceof Player player) {
+            com.mineaudio.stream.search.SearchFlow.search(plugin, player, searchKeyword, searchPage,
+                    (results, error) -> {
+                        if (error != null) {
+                            sender.sendMessage(Component.text("搜索失败：" + describeError(error),
+                                    NamedTextColor.RED));
+                            return;
+                        }
+                        printSearchResults(sender, searchPage, results);
+                    });
+            return;
+        }
+        plugin.searchService().search(searchKeyword, searchPage).whenComplete((results, error) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (plugin.isShuttingDown()) return;
                     if (error != null) {
                         sender.sendMessage(Component.text("搜索失败：" + describeError(error), NamedTextColor.RED));
                         return;
                     }
-                    if (sender instanceof Player player) {
-                        orchestrator.setSearchQuery(player, searchKeyword, searchPage, results);
-                    }
-                    if (results.isEmpty()) {
-                        sender.sendMessage(Component.text("没有找到结果", NamedTextColor.YELLOW));
-                        return;
-                    }
-                    int size = plugin.searchService().pageSize();
-                    boolean hasNext = results.size() >= size;
-                    sender.sendMessage(Component.text("搜索结果（第 " + (searchPage + 1) + " 页，"
-                            + results.size() + " 条" + (hasNext ? "，还有更多" : "") + "）：", NamedTextColor.YELLOW));
-                    for (int i = 0; i < results.size(); i++) {
-                        var result = results.get(i);
-                        boolean hasCover = result.coverUrl() != null && !result.coverUrl().isBlank();
-                        sender.sendMessage(Component.text("  " + (i + 1) + ". " + result.title()
-                                + " - " + result.artist() + "  [" + result.note()
-                                + (hasCover ? "·封面" : "·无封面") + "]",
-                                result.playable() ? NamedTextColor.WHITE : NamedTextColor.DARK_GRAY));
-                    }
-                    sender.sendMessage(Component.text(
-                            "点歌：/mineaudio queue add <序号>；立即播放：/mineaudio queue play <序号>；翻页："
-                                    + "/mineaudio search next|prev", NamedTextColor.GRAY));
+                    printSearchResults(sender, searchPage, results);
                 }));
+    }
+
+    private void printSearchResults(CommandSender sender, int page,
+                                    java.util.List<com.mineaudio.stream.search.SearchResult> results) {
+        if (results.isEmpty()) {
+            sender.sendMessage(Component.text("没有找到结果", NamedTextColor.YELLOW));
+            return;
+        }
+        int size = plugin.searchService().pageSize();
+        boolean hasNext = results.size() >= size;
+        sender.sendMessage(Component.text("搜索结果（第 " + (page + 1) + " 页，"
+                + results.size() + " 条" + (hasNext ? "，还有更多" : "") + "）：", NamedTextColor.YELLOW));
+        for (int i = 0; i < results.size(); i++) {
+            var result = results.get(i);
+            boolean hasCover = result.coverUrl() != null && !result.coverUrl().isBlank();
+            sender.sendMessage(Component.text("  " + (i + 1) + ". " + result.title()
+                    + " - " + result.artist() + "  [" + result.note()
+                    + (hasCover ? "·封面" : "·无封面") + "]",
+                    result.playable() ? NamedTextColor.WHITE : NamedTextColor.DARK_GRAY));
+        }
+        sender.sendMessage(Component.text(
+                "点歌：/mineaudio queue add <序号>；立即播放：/mineaudio queue play <序号>；翻页："
+                        + "/mineaudio search next|prev", NamedTextColor.GRAY));
     }
 
     private void queue(CommandSender sender, String[] args) {

@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.mineaudio.client.ProtocolClient;
 import com.mineaudio.client.decode.AudioDecoder;
+import com.mineaudio.client.decode.SeekStatus;
 import com.mineaudio.client.decode.PcmRingBuffer;
 import com.mineaudio.client.media.MediaCache;
 import com.mineaudio.client.media.MediaFirewall;
@@ -43,8 +44,24 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private static final long MAX_REASONABLE_DURATION_MS = 12L * 60 * 60 * 1000;
 
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
-    /** 最近一次播放的会话：MineUI 本地绑定（{local.mineaudio.*}）读取的“当前曲目”。 */
+    /**
+     * 本地控件绑定的会话：严格只选 MUSIC；环境音/音效会话永不抢占。
+     * 服务端 UI/HUD 读的是 orchestrator 的 currentMusic，本字段与之同义（客户端视角的当前音乐）。
+     */
     private volatile Session current;
+
+    private void reselectCurrent() {
+        Session music = null;
+        for (Session candidate : sessions.values()) {
+            if ("MUSIC".equalsIgnoreCase(candidate.bus)) {
+                music = candidate;
+                break;
+            }
+        }
+        current = music;
+    }
+    /** 本地动作命令序号（仅用于 UI 展示/调试，不下发）。 */
+    private final java.util.concurrent.atomic.AtomicLong localCommandSeq = new java.util.concurrent.atomic.AtomicLong();
     private ChannelAccess channelAccess;
     private volatile boolean available;
     private MediaFirewall.Policy serverPolicy;
@@ -127,8 +144,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (existing != null) existing.stop();
         Session session = new Session(sessionId, play);
         sessions.put(sessionId, session);
-        // 本地控件只针对 MUSIC；环境音/音效不得抢占“当前播放器”
-        if (current == null || "MUSIC".equalsIgnoreCase(play.bus())) {
+        // 本地控件只针对 MUSIC；环境音/音效会话永不成为 current
+        if ("MUSIC".equalsIgnoreCase(play.bus())) {
             current = session;
         }
         session.start();
@@ -140,10 +157,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (session != null) {
             session.stop();
             if (current == session) {
-                current = sessions.values().stream()
-                        .filter(s -> "MUSIC".equalsIgnoreCase(s.bus))
-                        .findFirst()
-                        .orElseGet(() -> sessions.isEmpty() ? null : sessions.values().iterator().next());
+                reselectCurrent();
             }
         }
     }
@@ -163,7 +177,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     @Override
     public void onSeek(String sessionId, Packets.Seek seek) {
         Session session = sessions.get(sessionId);
-        if (session != null) session.schedule(seek.executeAtServerTime(), () -> session.seek(seek.positionMs()));
+        if (session != null) {
+            session.schedule(seek.executeAtServerTime(), () -> session.seek(seek.requestId(), seek.positionMs()));
+        }
     }
 
     @Override
@@ -259,17 +275,17 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 Object value = payload == null ? null : payload.get("value");
                 if (!(value instanceof Number number) || duration <= 0) return false;
                 double percent = Math.max(0, Math.min(100, number.doubleValue()));
-                session.seek(Math.round(duration * percent / 100.0));
-                return true;
+                return session.seek(localCommandSeq.incrementAndGet(),
+                        Math.round(duration * percent / 100.0)) == SeekStatus.APPLIED;
             }
             case "seek_back" -> {
-                session.seek(Math.max(0, session.clock.positionMs() - 15_000));
-                return true;
+                return session.seek(localCommandSeq.incrementAndGet(),
+                        Math.max(0, session.clock.positionMs() - 15_000)) == SeekStatus.APPLIED;
             }
             case "seek_fwd" -> {
                 long target = session.clock.positionMs() + 15_000;
-                session.seek(duration > 0 ? Math.min(target, duration) : target);
-                return true;
+                return session.seek(localCommandSeq.incrementAndGet(),
+                        duration > 0 ? Math.min(target, duration) : target) == SeekStatus.APPLIED;
             }
             case "volume_up" -> {
                 session.setVolume(session.currentVolume() + 0.1f);
@@ -331,6 +347,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile Runnable pendingAction;
         private volatile long pendingSeekTargetMs = -1;
         private volatile long pendingSeekDeadlineAt;
+        private volatile long pendingSeekRequestId;
+        private volatile long lastCommandId;
         /** 播放时钟状态机：唯一允许写“听感位置”的组件（纯 Java，可单测）。 */
         private final com.mineaudio.client.playback.PlaybackClock clock =
                 new com.mineaudio.client.playback.PlaybackClock();
@@ -451,11 +469,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     channel.attachBufferStream(currentStream);
                     channel.setVolume(effectiveVolume());
                     applySpatial(channel);
-                    channel.play();
-                    // OpenAL 起播会立刻预取缓冲，不能再用“解码位置-环形缓冲”推算；
-                    // 只在“首次起播”时用 startAnchorMs 锚定；seek/恢复后的锚点由 onPcm 首帧负责，避免被覆盖成 0
-                    if (clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
-                            && pendingSeekTargetMs < 0) {
+                    // 用户暂停意图优先：LOADING 暂停后通道只创建不播放，恢复时再起播
+                    if (!clock.paused()) {
+                        channel.play();
+                    }
+                    if ((clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
+                            || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.BUFFERING)
+                            && pendingSeekTargetMs < 0 && !clock.paused()) {
                         clock.onOutputStarted(startAnchorMs);
                     }
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
@@ -469,18 +489,26 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             });
         }
 
-        /** 丢弃旧通道与旧 stream，从指定位置重新解码并重建播放通道（seek / 恢复共用）。 */
-        private void relocate(long positionMs) {
-            pendingSeekTargetMs = positionMs;
-            pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
-            draining = false; // seek 取消未完成的 drain 收尾
-            clock.onSeekRequested(positionMs);
-            PcmAudioStream oldStream = stream;
-            oldStream.markEnded();
+        /**
+         * 丢弃旧通道与旧 stream，从指定位置重新解码并重建播放通道（seek / 恢复共用）。
+         * 解码器拒绝（未加载/不支持）时直接返回失败，不修改上报位置、不触碰通道。
+         */
+        private com.mineaudio.client.decode.SeekStatus relocate(long requestId, long positionMs) {
+            com.mineaudio.client.decode.SeekStatus status;
             synchronized (ioLock) {
-                decoder.seek(positionMs); // 内部自增代际，旧帧回调作废
+                status = decoder.seek(positionMs); // 内部自增代际，旧帧回调作废
+                if (status != com.mineaudio.client.decode.SeekStatus.APPLIED) {
+                    return status;
+                }
                 ring.clear();
             }
+            pendingSeekTargetMs = positionMs;
+            pendingSeekRequestId = requestId;
+            pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
+            draining = false; // seek 取消未完成的 drain 收尾
+            clock.onSeekRequested();
+            PcmAudioStream oldStream = stream;
+            oldStream.markEnded();
             stream = new PcmAudioStream(ring);
             ChannelAccess.ChannelHandle old = handle;
             handle = null;
@@ -493,6 +521,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 ensureChannel();
             }
             report();
+            return com.mineaudio.client.decode.SeekStatus.APPLIED;
         }
 
         void pump() {
@@ -568,7 +597,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 clock.onResume();
                 decoder.setPaused(false);
                 // 从冻结位置精确重定位（重连一次，换取不跳帧、无残留队列）
-                relocate(clock.positionMs());
+                relocate(0, clock.positionMs());
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",
@@ -576,11 +605,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             report();
         }
 
-        void seek(long positionMs) {
+        com.mineaudio.client.decode.SeekStatus seek(long requestId, long positionMs) {
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                    "[audio] SEEK session={} -> {}ms (was {}ms, seekable={})",
-                    id, positionMs, decoder.positionMs(), decoder.seekable());
-            relocate(positionMs);
+                    "[audio] SEEK session={} id={} -> {}ms (was {}ms, seekable={})",
+                    id, requestId, positionMs, decoder.positionMs(), decoder.seekable());
+            com.mineaudio.client.decode.SeekStatus status = relocate(requestId, positionMs);
+            if (status != com.mineaudio.client.decode.SeekStatus.APPLIED) {
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                        "[audio] SEEK 被解码器拒绝 session={} status={}", id, status);
+            }
+            return status;
         }
 
         long knownDurationMs() {
@@ -667,8 +701,14 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         private void report() {
             if (closed) return;
-            // 状态只由播放时钟决定（DRAINING 映射为 PLAYING）
+            // 状态只由播放时钟决定（DRAINING 映射为 PLAYING）；
+            // 有暂停意图的 LOADING/BUFFERING 对外展示 PAUSED
             String state = clock.stateName();
+            if (clock.paused()
+                    && (clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
+                    || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.BUFFERING)) {
+                state = "PAUSED";
+            }
             long decoderDuration = decoder.durationMs();
             long duration = decoderDuration > 0 && decoderDuration <= MAX_REASONABLE_DURATION_MS
                     ? decoderDuration : durationHintMs;
@@ -684,7 +724,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     ++seq, state, position, duration,
                     availableBytes / BYTES_PER_MS,
                     availableBytes / (double) ring.capacity(),
-                    ProtocolClient.get().clock().rttMs(), 0, error);
+                    ProtocolClient.get().clock().rttMs(), 0, lastCommandId, error);
             ProtocolClient.get().sendState(id, revision, snapshot);
         }
 
@@ -711,6 +751,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     // 音频确实在目标位置：直接锚定目标，避免重连后首帧 timecode 相对化导致进度归零
                     if (!clock.paused()) {
                         clock.onSeekApplied(target);
+                        lastCommandId = pendingSeekRequestId;
                         report();
                     }
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
@@ -720,6 +761,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     pendingSeekTargetMs = -1;
                     if (!clock.paused()) {
                         clock.onSeekApplied(target);
+                        lastCommandId = pendingSeekRequestId;
                         report();
                     }
                 }
@@ -772,6 +814,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (clock.finished()) return;
             draining = false;
             clock.onDrained();
+            if (current == this) {
+                reselectCurrent();
+            }
             stream.markEnded();
             unregisterGateway();
             report();

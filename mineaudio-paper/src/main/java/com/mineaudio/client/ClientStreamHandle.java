@@ -24,6 +24,7 @@ final class ClientStreamHandle implements PlaybackHandle, StatusAware, CoverArt 
     private final UUID sessionId;
     private final String coverUrl;
     private int revision = 1;
+    private long nextRequestId = 1;
     private PlaybackState localState = PlaybackState.PENDING;
 
     ClientStreamHandle(MineAudioPlugin plugin, ClientProtocolService protocol, Player player, UUID sessionId,
@@ -83,9 +84,20 @@ final class ClientStreamHandle implements PlaybackHandle, StatusAware, CoverArt 
     @Override
     public boolean seek(Duration position) {
         if (!player.isOnline()) return false;
-        send(PacketType.SEEK, new Packets.Seek(Math.max(0, position.toMillis()),
+        long requestId = nextRequestId++;
+        protocol.noteSeekRequest(player, sessionId.toString(), requestId);
+        send(PacketType.SEEK, new Packets.Seek(requestId, Math.max(0, position.toMillis()),
                 ClientProtocolService.monotonicMs()));
         return true;
+    }
+
+    /** 最近一次发出的 seek 命令序号（0 表示从未发送）。 */
+    public long lastSeekRequestId() {
+        return nextRequestId - 1;
+    }
+
+    public UUID sessionUuid() {
+        return sessionId;
     }
 
     @Override

@@ -56,7 +56,8 @@ public final class MineUiIntegration implements AudioUi {
     private static final long SEEK_APPLY_TOLERANCE_MS = 2_000L;
     private static final long SEEK_TIMEOUT_MS = 5_000L;
 
-    private record PendingSeek(String sessionId, long targetMs, boolean playing, long sentAtMs) {
+    private record PendingSeek(String sessionId, long requestId, long targetMs, boolean playing,
+                               long sentAtMs) {
     }
 
     private final MineAudioPlugin plugin;
@@ -472,17 +473,15 @@ public final class MineUiIntegration implements AudioUi {
             return;
         }
         session.state("search_note", "第 " + (page + 1) + " 页搜索中…");
-        plugin.searchService().search(keyword, page).whenComplete((results, error) ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (error != null) {
-                        session.state("search_note", "搜索失败：" + describeError(error));
-                        return;
-                    }
-                    plugin.orchestrator().setSearchQuery(player, keyword, page, results);
-                    session.state("search_note", results.isEmpty() ? "没有找到结果"
-                            : "第 " + (page + 1) + " 页 · " + results.size() + " 条");
-                    push(player, session);
-                }));
+        com.mineaudio.stream.search.SearchFlow.search(plugin, player, keyword, page, (results, error) -> {
+            if (error != null) {
+                session.state("search_note", "搜索失败：" + describeError(error));
+                return;
+            }
+            session.state("search_note", results.isEmpty() ? "没有找到结果"
+                    : "第 " + (page + 1) + " 页 · " + results.size() + " 条");
+            push(player, session);
+        });
     }
 
     private void queueResult(Player player, int index, MineUiSession session, boolean playNow) {
@@ -647,13 +646,17 @@ public final class MineUiIntegration implements AudioUi {
 
     /** 记录待确认的 seek：等客户端上报落在目标附近才算生效，超时回退显示实际进度。 */
     private void markPendingSeek(Player player, long targetMs, boolean ok) {
-        if (!ok) return;
+        if (!ok || plugin.clientProtocol() == null) return;
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
-        ClientPlaybackStateCache.Snapshot snapshot = music == null ? null : snapshotOf(player, music);
+        if (music == null) return;
+        // 绑定“会话 + 命令序号”，只接受客户端回执的同一条命令
+        long requestId = plugin.clientProtocol().lastSeekRequest(player, music.handle().id().toString());
+        if (requestId <= 0) return;
+        ClientPlaybackStateCache.Snapshot snapshot = snapshotOf(player, music);
         boolean playing = snapshot != null && snapshot.playing();
         pendingSeeks.put(player.getUniqueId(), new PendingSeek(
-                music == null ? "" : music.handle().id().toString(),
-                targetMs, playing, System.currentTimeMillis()));
+                music.handle().id().toString(), requestId, targetMs, playing,
+                System.currentTimeMillis()));
     }
 
     private void resolvePendingSeek(Player player, MineUiSession session, PlaybackSession music,
@@ -663,6 +666,13 @@ public final class MineUiIntegration implements AudioUi {
         // 换曲后旧 seek 不得用新会话的位置确认
         if (!pending.sessionId().equals(music.handle().id().toString())) {
             pendingSeeks.remove(player.getUniqueId());
+            return;
+        }
+        // 首选命令回执确认；旧客户端（lastCommandId 恒为 0）退化为位置接近判断
+        if (progress != null && progress.sessionId().equals(pending.sessionId())
+                && pending.requestId() > 0 && progress.lastCommandId() == pending.requestId()) {
+            pendingSeeks.remove(player.getUniqueId());
+            session.state("note", "已定位到 " + formatMs(pending.targetMs()));
             return;
         }
         long position = progress == null ? -1 : progress.displayPositionMs();

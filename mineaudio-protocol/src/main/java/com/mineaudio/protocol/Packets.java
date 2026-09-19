@@ -63,7 +63,10 @@ public final class Packets {
     public record Resume(long positionMs, long executeAtServerTime) {
     }
 
-    public record Seek(long positionMs, long executeAtServerTime) {
+    public record Seek(
+            long requestId,
+            long positionMs,
+            long executeAtServerTime) {
     }
 
     public record Volume(float volume, int transitionMs) {
@@ -78,6 +81,7 @@ public final class Packets {
             double bufferRatio,
             long rttMs,
             long driftMs,
+            long lastCommandId,
             Error error) {
 
         public record Error(String code, String message) {

@@ -19,7 +19,10 @@ public interface AudioDecoder extends AutoCloseable {
 
     void setPaused(boolean paused);
 
-    void seek(long positionMs);
+    /** 请求定位；返回是否被解码器接受（不代表已生效）。 */
+    default SeekStatus seek(long positionMs) {
+        return SeekStatus.NOT_READY;
+    }
 
     /** 当前音轨是否支持 seek（诊断用）。 */
     default boolean seekable() {

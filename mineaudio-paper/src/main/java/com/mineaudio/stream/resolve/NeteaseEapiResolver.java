@@ -44,6 +44,14 @@ public final class NeteaseEapiResolver implements StreamResolver {
     private final ResolutionCache cache = new ResolutionCache();
     private final HttpClient http;
     private final Semaphore concurrency;
+    private final SongMetaCache songMetaCache = new SongMetaCache();
+    /** 详情请求的短超时：best-effort，不能拖住播放地址的完成。 */
+    private static final int DETAIL_TIMEOUT_MS = 1500;
+
+    /** 共享歌曲元数据缓存（与搜索互相预热）。 */
+    public SongMetaCache songMetaCache() {
+        return songMetaCache;
+    }
 
     public NeteaseEapiResolver(Config config) {
         this.config = config;
@@ -82,7 +90,16 @@ public final class NeteaseEapiResolver implements StreamResolver {
                     new ResolveException(ResolveFailureKind.INVALID_RESPONSE, "非法歌曲 ID"));
         }
         String key = SOURCE_ID + ":" + id;
-        return cache.resolve(key, () -> requestUrl(key, id, true));
+        return cache.resolve(key, () -> {
+            // A1：主线程调用永不阻塞——无许可时直接返回限流错误
+            if (!concurrency.tryAcquire()) {
+                return CompletableFuture.failedFuture(new ResolveException(
+                        ResolveFailureKind.RATE_LIMITED, "网易解析并发已满，请稍后重试"));
+            }
+            CompletionStage<ResolveResult> stage = requestUrl(key, id, true);
+            stage.whenComplete((result, error) -> concurrency.release());
+            return stage;
+        });
     }
 
     private CompletionStage<ResolveResult> requestUrl(String key, String id, boolean retryOnAuth) {
@@ -100,24 +117,22 @@ public final class NeteaseEapiResolver implements StreamResolver {
                 .build();
 
         CompletableFuture<ResolveResult> future = new CompletableFuture<>();
-        try {
-            concurrency.acquire();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return CompletableFuture.failedFuture(new ResolveException(
-                    ResolveFailureKind.TIMEOUT, "解析线程被中断"));
-        }
         http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                 .whenComplete((response, error) -> {
-                    concurrency.release();
                     if (error != null) {
                         future.completeExceptionally(mapTransportError(error));
                         return;
                     }
                     try {
                         ResolveResult parsed = parse(response.statusCode(), decodeBody(response.body()));
-                        enrichWithDetail(id, parsed).whenComplete((enriched, enrichError) ->
-                                future.complete(enrichError == null && enriched != null ? enriched : parsed));
+                        SongMetaCache.Meta meta = songMetaCache.get(key);
+                        ResolveResult withMeta = meta == null ? parsed : applyMeta(parsed, meta);
+                        if (meta != null) {
+                            future.complete(withMeta);
+                            return;
+                        }
+                        enrichWithDetail(id, withMeta).whenComplete((enriched, enrichError) ->
+                                future.complete(enrichError == null && enriched != null ? enriched : withMeta));
                     } catch (ResolveException e) {
                         if (retryOnAuth && e.kind() == ResolveFailureKind.ACCOUNT_NOT_ENTITLED) {
                             cache.invalidate(key);
@@ -194,7 +209,7 @@ public final class NeteaseEapiResolver implements StreamResolver {
     private CompletionStage<ResolveResult> enrichWithDetail(String id, ResolveResult base) {
         String json = "{\"c\":\"[{\\\"id\\\":\\\"" + id + "\\\"}]\"}";
         HttpRequest request = HttpRequest.newBuilder(URI.create("https://music.163.com/eapi" + DETAIL_PATH))
-                .timeout(Duration.ofMillis(Math.max(500, config.timeoutMs())))
+                .timeout(Duration.ofMillis(Math.max(500, Math.min(config.timeoutMs(), DETAIL_TIMEOUT_MS))))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("User-Agent", USER_AGENT)
                 .header("Referer", "https://music.163.com")
@@ -210,12 +225,24 @@ public final class NeteaseEapiResolver implements StreamResolver {
                         return;
                     }
                     try {
-                        enriched.complete(mergeDetail(base, decodeBody(response.body()), config.coverPx()));
+                        ResolveResult merged = mergeDetail(base, decodeBody(response.body()), config.coverPx());
+                        songMetaCache.put(SOURCE_ID + ":" + id, merged.title(),
+                                merged.artist(), merged.coverUrl());
+                        enriched.complete(merged);
                     } catch (Exception e) {
                         enriched.complete(base);
                     }
                 });
         return enriched;
+    }
+
+    /** 命中元数据缓存时直接补齐（同一次请求内不重复拉详情）。 */
+    private static ResolveResult applyMeta(ResolveResult base, SongMetaCache.Meta meta) {
+        return new ResolveResult(base.streamUrl(),
+                meta.title() != null && !meta.title().isBlank() ? meta.title() : base.title(),
+                meta.artist() != null ? meta.artist() : base.artist(),
+                base.durationMs(), base.expiresAt(),
+                meta.coverUrl() != null ? meta.coverUrl() : base.coverUrl());
     }
 
     /** 解析 song/detail 响应，失败字段回退 base。 */

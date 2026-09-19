@@ -578,13 +578,20 @@ public final class AudioOrchestrator implements MineAudio {
         state.remove(session);
         removeFromActiveSessions(player.getUniqueId(), session);
         session.handle().stop();
+        boolean music = session.track().bus() == AudioBus.MUSIC;
         if (errorCode != null) {
             plugin.getLogger().warning("[client] " + player.getName() + " 会话 " + sessionId
                     + " 播放失败：" + errorCode + (message == null ? "" : " " + message));
             Bukkit.getPluginManager().callEvent(new AudioStopEvent(player, session.track()));
+            // 失败也续播（跳过坏曲），但只允许 MUSIC 总线推进队列：环境音结束不得切歌
+            if (music) {
+                playNextQueued(player);
+            }
         } else if (finished) {
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, session.track()));
-            playNextQueued(player);
+            if (music) {
+                playNextQueued(player);
+            }
         }
     }
 
@@ -608,6 +615,10 @@ public final class AudioOrchestrator implements MineAudio {
             if (state != null) state.remove(playback);
             removeFromActiveSessions(player.getUniqueId(), playback);
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, playback.track()));
+            // 非 STREAM 后端的自然结束同样续播队列；环境音（AMBIENT）永不推进
+            if (playback.track().bus() == AudioBus.MUSIC) {
+                playNextQueued(player);
+            }
         }, ticks);
         finishTasks.put(playback.id(), task);
     }

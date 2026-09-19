@@ -26,6 +26,9 @@ public final class ClientProtocolService {
     private final MineAudioPlugin plugin;
     private final ClientConnectionRegistry registry = new ClientConnectionRegistry();
     private final ClientPlaybackStateCache stateCache = new ClientPlaybackStateCache();
+    /** 最近一次发出的 seek（sessionId -> requestId），供 UI 待确认绑定。 */
+    private final java.util.Map<java.util.UUID, java.util.Map<String, Long>> lastSeekRequests =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private final PluginMessageListener listener = this::onPluginMessageReceived;
 
     public ClientProtocolService(MineAudioPlugin plugin) {
@@ -55,6 +58,22 @@ public final class ClientProtocolService {
 
     public ClientPlaybackStateCache stateCache() {
         return stateCache;
+    }
+
+    public void noteSeekRequest(Player player, String sessionId, long requestId) {
+        lastSeekRequests.computeIfAbsent(player.getUniqueId(),
+                ignored -> new java.util.concurrent.ConcurrentHashMap<>()).put(sessionId, requestId);
+        ClientPlaybackStateCache.Snapshot snapshot = stateCache.snapshot(player, sessionId);
+        if (snapshot != null && snapshot.lastCommandId() == requestId) {
+            lastSeekRequests.get(player.getUniqueId()).remove(sessionId);
+        }
+    }
+
+    /** 该会话最近一次发出的 seek 命令序号；无记录返回 0。 */
+    public long lastSeekRequest(Player player, String sessionId) {
+        java.util.Map<String, Long> bySession = lastSeekRequests.get(player.getUniqueId());
+        if (bySession == null) return 0;
+        return bySession.getOrDefault(sessionId, 0L);
     }
 
     public static long monotonicMs() {
