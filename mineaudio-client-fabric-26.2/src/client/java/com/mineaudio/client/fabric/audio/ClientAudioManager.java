@@ -240,6 +240,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile Runnable pendingAction;
         private volatile long pendingSeekTargetMs = -1;
         private volatile long pendingSeekDeadlineAt;
+        // 播放时钟（呈现位置）：以真实起播/seek/恢复时刻为锚点，按本地单调时钟推进；
+        // 暂停/缓冲时冻结。上报它才与耳朵听到的位置一致（解码位置会领先环形缓冲+OpenAL 队列）。
+        private volatile long presentAnchorMs;
+        private volatile long presentAnchorAtNanos;
+        private volatile boolean presentRunning;
 
         Session(String sessionId, Packets.Play play) {
             this.id = sessionId;
@@ -338,9 +343,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     channel.setVolume(effectiveVolume());
                     applySpatial(channel);
                     channel.play();
+                    // 通道起播时，真正先播放的是环形缓冲头部，而不是解码位置
+                    long head = Math.max(0, decoder.positionMs() - ring.available() / BYTES_PER_MS);
+                    anchorPresentation(head);
                     com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
-                            "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B",
-                            id, effectiveVolume(), bus, ring.available());
+                            "[audio] 通道已启动 session={} effectiveVolume={} bus={} ring={}B anchor={}ms",
+                            id, effectiveVolume(), bus, ring.available(), head);
                 });
             }).exceptionally(t -> {
                 fail("CHANNEL_ERROR", t.toString());
@@ -396,6 +404,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
 
         void setPaused(boolean value) {
+            if (value) {
+                freezePresentation();
+            }
             paused = value;
             decoder.setPaused(value);
             ChannelAccess.ChannelHandle current = handle;
@@ -407,6 +418,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                         channel.unpause();
                     }
                 });
+            }
+            if (!value) {
+                anchorPresentation(presentAnchorMs);
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",
@@ -421,6 +435,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             generation.incrementAndGet();
             pendingSeekTargetMs = positionMs;
             pendingSeekDeadlineAt = System.nanoTime() / 1_000_000 + SEEK_FILTER_TIMEOUT_MS;
+            // 目标位置冻结显示，等第一帧目标附近的 PCM 到达后重新起锚
+            presentAnchorMs = Math.max(0, positionMs);
+            presentRunning = false;
             decoder.seek(positionMs);
             ring.clear();
             stream.reset();
@@ -435,6 +452,33 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 });
             }
             report();
+        }
+
+        /** 播放时钟当前位置（毫秒）；未起播时返回起始位置/0。 */
+        private long presentationPositionMs() {
+            long anchor = presentAnchorMs;
+            if (!presentRunning) {
+                return Math.max(0, anchor);
+            }
+            long elapsed = (System.nanoTime() - presentAnchorAtNanos) / 1_000_000;
+            long position = anchor + Math.max(0, elapsed);
+            long duration = decoder.durationMs();
+            if (duration > 0 && position > duration) {
+                position = duration;
+            }
+            return Math.max(0, position);
+        }
+
+        private void anchorPresentation(long mediaPositionMs) {
+            presentAnchorMs = Math.max(0, mediaPositionMs);
+            presentAnchorAtNanos = System.nanoTime();
+            presentRunning = true;
+        }
+
+        private void freezePresentation() {
+            long current = presentationPositionMs();
+            presentAnchorMs = current;
+            presentRunning = false;
         }
 
         void setVolume(float value) {
@@ -517,10 +561,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             long decoderDuration = decoder.durationMs();
             long duration = decoderDuration > 0 && decoderDuration <= MAX_REASONABLE_DURATION_MS
                     ? decoderDuration : durationHintMs;
-            // 听感位置：解码位置减去 RingBuffer 中尚未交给播放器的部分，避免进度条领先声音
+            // 上报听感位置（播放时钟），不再用解码位置或环形缓冲推算
             int availableBytes = ring.available();
-            long decodedPosition = Math.max(0, decoder.positionMs());
-            long position = Math.max(0, decodedPosition - availableBytes / BYTES_PER_MS);
+            long position = presentationPositionMs();
             if (duration > 0 && position > duration) {
                 position = duration;
             }
@@ -552,11 +595,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (target >= 0) {
                 if (Math.abs(timecodeMs - target) <= SEEK_FILTER_TOLERANCE_MS) {
                     pendingSeekTargetMs = -1;
+                    // 第一帧目标位置的 PCM：以此重锚播放时钟
+                    anchorPresentation(timecodeMs);
+                    report();
                 } else if (System.nanoTime() / 1_000_000 <= pendingSeekDeadlineAt) {
                     // seek 后 LavaPlayer 内部仍在吐旧位置帧：丢弃，等目标附近的帧
                     return;
                 } else {
                     pendingSeekTargetMs = -1;
+                    anchorPresentation(timecodeMs);
+                    report();
                 }
             }
             boolean first = firstPcm.compareAndSet(false, true);
@@ -590,6 +638,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onEnded() {
+            freezePresentation();
             finished = true;
             stream.markEnded();
             report();
