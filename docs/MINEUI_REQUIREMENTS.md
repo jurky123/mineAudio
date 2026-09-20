@@ -197,7 +197,7 @@ MineAudio 已用 `image` + `{state.cover}` 展示网易封面（圆形用 `radiu
 
 ---
 
-## 10. FR-14 输入框中文（IME）支持（2026-09-19 新增，待 MineUI 修复）
+## 10. FR-14 输入框中文（IME）支持（2026-09-19 新增，MineUI 已交付待验收）
 
 现象：MineUI 自绘输入框无法输入中文（IME 组词不激活）。
 
@@ -212,15 +212,22 @@ MineAudio 已用 `image` + `{state.cover}` 展示网易封面（圆形用 `radiu
 - 失焦 / 关闭界面：`onTextInputFocusChange(listener, false)`
 - `charTyped` 已能收到合成后的字符，无需改动
 - 验收：Windows 微软拼音下可输入并提交中文；组词进行中按回车不误触发提交
+- MineAudio 侧无需改动（聚焦自动激活）；搜索框中文待用户在 Windows 微软拼音下实机验收
 
-## 11. FR-15 图片最近邻过滤（像素风）（2026-09-19 新增，待 MineUI 设计）
+## 11. FR-15 图片最近邻过滤（像素风）（2026-09-19 新增，MineUI 已交付）
 
 MineAudio 的封面已改为 64px 缩略图（网易 `?param=64y64`）。希望 `image` 节点支持
 `"filter": "nearest"`（或 `pixelated: true`）：放大时使用最近邻采样，风格更贴像素画且不糊；
-缺省仍为线性过滤，旧客户端遇到未知字段安全忽略。
+实测结论（MineUI）：远程图基底与遮罩/着色变体恒为最近邻，
+MineAudio 的 64px 封面天然是像素风——本仓库无需加 `filter` 字段；显式 `"linear"` 才走变体烘焙。
 
 
 ---
+
+### 附：点分嵌套键（MineUI Deferred-(a)，已交付）
+- `state("player.name", v)` 现在按嵌套路径处理；MineAudio 侧已核对：所有顶层状态键只用下划线
+  （如 `srch0_name`），唯一带点的是文本拼接 `"{state.state}  {state.backend}  {state.origin}"`，
+  不受语义变更影响。
 
 ## 12. FR-16 跨仓库架构评审意见（2026-09-19，待 MineUI 处理）
 
