@@ -30,6 +30,7 @@ public record MusicIntent(
 
     /** 优先级比较：layer 高者胜，同层 sequence 大者胜。 */
     public int compare(MusicIntent other) {
+        if (other == null) return 1;
         int byLayer = Integer.compare(layer.priority(), other.layer.priority());
         if (byLayer != 0) return byLayer;
         return Long.compare(sequence, other.sequence);
@@ -37,6 +38,7 @@ public record MusicIntent(
 
     /** source 身份 + 内容一致：用于 upsert 保留原 sequence，避免 refresh 反抢。 */
     public boolean sameContent(MusicIntent other) {
+        if (other == null) return false;
         return layer == other.layer
                 && track.id().equals(other.track.id())
                 && sameOptions(options, other.options)

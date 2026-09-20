@@ -541,7 +541,7 @@ public final class AudioOrchestrator implements MineAudio {
                 arbiter.remove(winner.sourceId());
                 continue;
             }
-            if (winner.sameContent(current) && currentSession != null) {
+            if (current != null && winner.sameContent(current) && currentSession != null) {
                 return; // 已收敛
             }
 

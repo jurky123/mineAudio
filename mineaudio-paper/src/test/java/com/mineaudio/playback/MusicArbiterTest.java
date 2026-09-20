@@ -1,7 +1,9 @@
 package com.mineaudio.playback;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -97,5 +99,12 @@ class MusicArbiterTest {
         arbiter.upsert(intent("personal", MusicLayer.PERSONAL, 1));
         arbiter.remove("personal");
         assertNull(arbiter.selectWinner());
+    }
+
+    @Test
+    void intentComparisonIsNullSafe() {
+        MusicIntent intent = intent("personal", MusicLayer.PERSONAL, 1);
+        assertFalse(intent.sameContent(null));
+        assertTrue(intent.compare(null) > 0);
     }
 }
