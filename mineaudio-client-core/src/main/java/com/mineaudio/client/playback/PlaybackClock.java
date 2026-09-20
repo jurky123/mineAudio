@@ -134,14 +134,25 @@ public final class PlaybackClock {
         }
     }
 
+    /**
+     * 暂停后从同一输出队列恢复（通道未重建）：清除暂停意图，以冻结位置重新起锚。
+     * 解码器已结束时回到 DRAINING 继续等待排空，否则直接回到 PLAYING；
+     * 不经过 BUFFERING，因为 OpenAL 队列里的音频仍在，可立即继续输出。
+     */
+    public synchronized void resumeFromOutput(long mediaPositionMs) {
+        userPaused = false;
+        if (state == State.FINISHED || state == State.ERROR) return;
+        anchor(mediaPositionMs);
+        running = true;
+        state = decoderEndedFlag ? State.DRAINING : State.PLAYING;
+    }
+
     /** 欠载：冻结当前位置并等待补数。 */
     public synchronized void onUnderrun() {
         if (state != State.PLAYING) return;
         freeze();
         state = State.BUFFERING;
-    }
-
-    /** 解码结束但输出缓冲可能仍有音频：进入 DRAINING，位置继续外推；暂停中只记标记。 */
+    }    /** 解码结束但输出缓冲可能仍有音频：进入 DRAINING，位置继续外推；暂停中只记标记。 */
     public synchronized void onDecoderEnded() {
         if (state == State.FINISHED || state == State.ERROR) return;
         decoderEndedFlag = true;

@@ -554,15 +554,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 }
             }
             if (clock.paused()) {
-                // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停下；
-                // 排空尾部只 pause 不 stop，否则尾部音频会被丢弃且无法再生
+                // 兜底：暂停期间通道若被外部引擎（SoundEngine.resume 无条件 unpause）重新起播，立即重 pause。
+                // 一律只 pause 不 stop：保留 OpenAL 已排队音频，恢复时 unpause 才能精确续播
                 current.execute(channel -> {
                     if (channel.playing()) {
-                        if (draining && decoder.finished()) {
-                            channel.pause();
-                        } else {
-                            channel.stop();
-                        }
+                        channel.pause();
                     }
                 });
                 return;
@@ -601,53 +597,50 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 clock.onPause();
                 drainPauseStartMs = System.currentTimeMillis();
                 decoder.setPaused(true);
+                // 一律只 pause 不 stop：stop 会丢弃 OpenAL 已排队的音频，恢复时无法还原。
+                // 关闭界面触发的 SoundEngine.resume() 无条件 unpause 由 pump 兜底重 pause。
                 ChannelAccess.ChannelHandle current = handle;
                 if (current != null) {
-                    if (draining && decoder.finished()) {
-                        // 排空尾部只 pause 不 stop：stop 会丢弃 OpenAL 队列里最后的音频，
-                        // 而解码器已结束无法重新生成。开关 UI 触发的 resume 由 pump 兜底重 pause。
-                        current.execute(channel -> {
-                            if (channel.playing()) {
-                                channel.pause();
-                            }
-                        });
-                    } else {
-                        // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
-                        // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
-                        current.execute(Channel::stop);
-                    }
+                    current.execute(channel -> {
+                        if (channel.playing()) {
+                            channel.pause();
+                        }
+                    });
                 }
             } else {
                 // 先判定排空状态，避免解码器恢复后状态竞变
                 boolean wasDraining = draining && decoder.finished();
-                if (wasDraining && drainPauseStartMs > 0) {
-                    // 排空中暂停：通道从未被 stop（只是 pause），直接恢复即可；
-                    // 不重新定位、不清空 PCM、不重建通道。暂停时长不计入排空截止
+                long resumeAt = clock.positionMs();
+                ChannelAccess.ChannelHandle current = handle;
+                if (current != null) {
+                    // 通道全程只是 pause，OpenAL 队列完整保留：unpause 即从暂停点精确续播。
+                    // 不再按播放时钟重定位——墙钟会因解码饥饿补静音而缓慢漂移到实际音频之前，
+                    // 越到曲末漂移越大，重定位就会跳过尚未听到的一段（尾部暂停恢复跳播的根因）
+                    clock.resumeFromOutput(resumeAt);
+                    decoder.setPaused(false);
+                    current.execute(Channel::unpause);
+                    if (wasDraining) {
+                        pendingSeekTargetMs = -1;
+                    }
+                } else {
+                    // 通道丢失：只能从冻结位置重新解码。排空中优先重建（保留残余 PCM）
                     clock.onResume();
                     decoder.setPaused(false);
-                    drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
-                    drainPauseStartMs = 0;
-                    pendingSeekTargetMs = -1;
-                    ChannelAccess.ChannelHandle current = handle;
-                    if (current != null) {
-                        current.execute(Channel::unpause);
-                    } else {
-                        // 通道丢失时的兜底：重建（尾部可能已丢失）
+                    if (wasDraining) {
+                        pendingSeekTargetMs = -1;
                         channelEpoch.incrementAndGet();
                         channelRequested.set(false);
                         ensureChannel();
+                    } else {
+                        relocate(0, resumeAt);
                     }
-                } else {
-                    // 非排空恢复：先停旧通道防泵回放旧数据，再从冻结位置重定位，最后恢复解码
-                    long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
-                    ChannelAccess.ChannelHandle old = handle;
-                    handle = null;
-                    if (old != null) {
-                        old.execute(Channel::stop);
+                }
+                if (drainPauseStartMs > 0) {
+                    if (wasDraining) {
+                        // 暂停时长不计入排空截止
+                        drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
                     }
-                    clock.onResume();
-                    relocate(0, resumeAt);
-                    decoder.setPaused(false);
+                    drainPauseStartMs = 0;
                 }
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(

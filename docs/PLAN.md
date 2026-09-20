@@ -25,6 +25,9 @@
 '
 '> 2026-09-20 追加：修复客户端暂停后恢复跳回 bug——非排空恢复路径解码器先于重定位解冻导致帧竞态，
 '> 现改为先停旧通道、再 relocate、最后解冻解码器；排空路径 wasDraining 判定提前防止状态竞变（客户端 0.2.11）。
+'> 2026-09-20 追加：彻底修复尾部暂停恢复跳播——暂停/恢复一律只 pause/unpause OpenAL 通道保留已排队音频，
+'> 不再按播放时钟重定位（墙钟因解码饥饿补静音而漂移到实际音频之前，曲末漂移最大导致跳过一段）；
+'> PlaybackClock 新增 resumeFromOutput 直接回到 PLAYING/DRAINING 不经过 BUFFERING（客户端 0.2.12）。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

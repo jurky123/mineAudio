@@ -88,6 +88,34 @@ class PlaybackClockTest {
     }
 
     @Test
+    void resumeFromOutputAnchorsAtFrozenPositionAndPlays() throws Exception {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onOutputStarted(0);
+        Thread.sleep(25);
+        clock.onPause();
+        long frozen = clock.positionMs();
+        clock.resumeFromOutput(frozen);
+        assertEquals(PlaybackClock.State.PLAYING, clock.state());
+        assertTrue(clock.playing());
+        long resumed = clock.positionMs();
+        assertTrue(resumed >= frozen, "resumed=" + resumed + " frozen=" + frozen);
+        assertTrue(resumed - frozen < 1000, "jumped too far: " + (resumed - frozen));
+    }
+
+    @Test
+    void resumeFromOutputDuringDecodeEndedGoesDraining() {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onOutputStarted(0);
+        clock.onPause();
+        clock.onDecoderEnded(); // 暂停中只记标记
+        clock.resumeFromOutput(30_000);
+        assertEquals(PlaybackClock.State.DRAINING, clock.state());
+        assertTrue(clock.positionMs() >= 30_000);
+    }
+
+    @Test
     void underrunFreezesAndRecovers() throws Exception {
         PlaybackClock clock = new PlaybackClock();
         clock.reset(180_000);
