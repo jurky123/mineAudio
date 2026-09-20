@@ -25,7 +25,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
 - 发声点：世界坐标 + 半径，`ALWAYS` / `REDSTONE` / `COMMAND` / `INTERACT` 触发
 - Fallback：资源包未加载或 NoteBlockAPI 未安装时自动降级；缺失只影响对应 Backend
-- MineUI 音乐界面：`/mineaudio ui` 查看当前播放（含进度条）、控制暂停/继续/定位/音量、点播曲目，`/mineaudio hud` 切换“正在播放”HUD
+- MineUI 音乐界面（需要 MineUI 服务端/客户端 **0.14+**、客户端包内含 `mineui-client-api`）：`/mineaudio ui` 查看当前播放（含进度条）、控制暂停/继续/定位/音量、点播曲目，`/mineaudio hud` 切换“正在播放”HUD
 - 每玩家能力查询（`AudioCapabilities`）与事件（播放 / 停止 / 进出区域 / Emitter 启动）
 - Java API `com.mineaudio.api`：`play` / `playSfx` / `playSfxAt` / `stop` / `registerCue`
 
