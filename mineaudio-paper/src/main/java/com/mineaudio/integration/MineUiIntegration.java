@@ -122,11 +122,27 @@ public final class MineUiIntegration implements AudioUi {
         return caps.contains("local_state") && caps.contains("mineaudio_local_v1");
     }
 
-    /** 有本地能力位且（空闲或自研客户端播放）时用本地绑定页面；NBS/PACK 等走服务端控制。 */
+    /**
+     * 页面与 HUD 共用的“本地绑定”判定：有本地能力位，且空闲或正在自研客户端播放。
+     * NBS/PACK 等走服务端控制。
+     */
     private boolean useLocalPage(Player player) {
         if (!hasLocalState(player)) return false;
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         return music == null || "stream".equals(music.backend());
+    }
+
+    /** HUD 打开时若后端变化（如 STREAM 切到 NBS），跟随页面切换到对应版本。 */
+    private void syncHudMode(Player player) {
+        MineUiSession hud = hudSessions.get(player.getUniqueId());
+        if (hud == null || hud.closed() || !hudSupported(player)) return;
+        Boolean mode = hudLocalModes.get(player.getUniqueId());
+        if (mode != null && mode != useLocalPage(player)) {
+            hudLocalModes.remove(player.getUniqueId());
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (player.isOnline()) toggleHud(player);
+            });
+        }
     }
 
     @Override
@@ -140,7 +156,7 @@ public final class MineUiIntegration implements AudioUi {
             plugin.getLogger().info("[ui] " + player.getName() + " HUD 已关闭");
             return false;
         }
-        boolean local = hasLocalState(player);
+        boolean local = useLocalPage(player);
         JsonObject definition = local && hudPageLocal != null ? hudPageLocal : hudPage;
         String view = local && hudPageLocal != null ? "hud-local" : "hud";
         MineUiSession hud = api.openHud(plugin, player, APP, view, definition,
@@ -289,6 +305,7 @@ public final class MineUiIntegration implements AudioUi {
     }
 
     private void quit(Player player) {
+        com.mineaudio.stream.search.SearchFlow.clear(player.getUniqueId());
         close(player);
         UUID playerId = player.getUniqueId();
         stopHudRefresher(playerId);
@@ -306,6 +323,7 @@ public final class MineUiIntegration implements AudioUi {
 
     @Override
     public void shutdown() {
+        com.mineaudio.stream.search.SearchFlow.clearAll();
         for (UUID playerId : List.copyOf(sessions.keySet())) {
             stopRefresher(playerId);
             MineUiSession session = sessions.remove(playerId);
@@ -474,6 +492,9 @@ public final class MineUiIntegration implements AudioUi {
         }
         session.state("search_note", "第 " + (page + 1) + " 页搜索中…");
         com.mineaudio.stream.search.SearchFlow.search(plugin, player, keyword, page, (results, error) -> {
+            // 页面可能已关闭或被重开：只写回当前仍打开的同一会话
+            MineUiSession current = sessions.get(player.getUniqueId());
+            if (current == null || current != session || current.closed()) return;
             if (error != null) {
                 session.state("search_note", "搜索失败：" + describeError(error));
                 return;
@@ -578,6 +599,7 @@ public final class MineUiIntegration implements AudioUi {
             hud.state("status_visible", false);
         }
         pushProgress(player, hud, progress, Boolean.TRUE.equals(hudLocalModes.get(player.getUniqueId())));
+        syncHudMode(player);
     }
 
     private void playTrack(Player player, int index, boolean global) {
@@ -675,8 +697,10 @@ public final class MineUiIntegration implements AudioUi {
             session.state("note", "已定位到 " + formatMs(pending.targetMs()));
             return;
         }
+        // 位置接近只作为无回执旧客户端的兜底；新客户端以命令回执为准，避免假确认
         long position = progress == null ? -1 : progress.displayPositionMs();
-        if (position >= 0 && Math.abs(position - pending.targetMs()) <= SEEK_APPLY_TOLERANCE_MS) {
+        if (progress != null && progress.lastCommandId() == 0 && position >= 0
+                && Math.abs(position - pending.targetMs()) <= SEEK_APPLY_TOLERANCE_MS) {
             pendingSeeks.remove(player.getUniqueId());
             session.state("note", "已定位到 " + formatMs(pending.targetMs()));
             return;

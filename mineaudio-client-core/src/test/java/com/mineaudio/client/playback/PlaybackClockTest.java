@@ -161,4 +161,51 @@ class PlaybackClockTest {
         assertEquals(PlaybackClock.State.LOADING, clock.state());
         assertFalse(clock.paused());
     }
+
+    @Test
+    void pauseDuringDrainingFreezesWithoutLeavingDraining() throws Exception {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onOutputStarted(0);
+        clock.onPause();
+        clock.onSeekApplied(30_000);
+        clock.onDecoderEnded(); // 暂停中只记标记，状态保持 PAUSED
+        assertEquals(PlaybackClock.State.PAUSED, clock.state());
+        assertTrue(clock.paused());
+        Thread.sleep(30);
+        long frozen = clock.positionMs();
+        clock.onPause(); // 暂停：冻结但保留排空意图
+        Thread.sleep(30);
+        assertTrue(clock.paused());
+        assertEquals(frozen, clock.positionMs());
+        clock.onResume(); // 恢复：回到 DRAINING 继续等待耗尽
+        assertFalse(clock.paused());
+        assertEquals(PlaybackClock.State.DRAINING, clock.state());
+    }
+
+    @Test
+    void drainingPauseFreezesAndResumeContinuesWithoutJump() throws Exception {
+        PlaybackClock clock = new PlaybackClock();
+        clock.reset(180_000);
+        clock.onOutputStarted(0);
+        Thread.sleep(40);
+        clock.onDecoderEnded();
+        assertEquals(PlaybackClock.State.DRAINING, clock.state());
+        Thread.sleep(20);
+        clock.onPause();
+        assertTrue(clock.paused());
+        assertEquals(PlaybackClock.State.DRAINING, clock.state());
+        long frozen = clock.positionMs();
+        Thread.sleep(80); // 暂停期间不得外推
+        assertEquals(frozen, clock.positionMs());
+        clock.onResume();
+        assertFalse(clock.paused());
+        assertEquals(PlaybackClock.State.DRAINING, clock.state());
+        long rightAfter = clock.positionMs();
+        java.lang.Thread.sleep(20);
+        // 恢复后继续外推，且没有把暂停时长算进去
+        long after = clock.positionMs();
+        assertTrue(after >= rightAfter, "rightAfter=" + rightAfter + " after=" + after);
+        assertTrue(after - rightAfter < 1000, "jumped too far: " + (after - rightAfter));
+    }
 }

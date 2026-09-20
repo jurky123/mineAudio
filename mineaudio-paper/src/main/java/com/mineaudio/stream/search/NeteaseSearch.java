@@ -35,6 +35,10 @@ public final class NeteaseSearch {
     private static final String DETAIL_ENDPOINT = "https://music.163.com/eapi" + DETAIL_PATH;
     private static final long CACHE_TTL_MS = 5 * 60_000L;
     private static final int MAX_KEYWORD_LENGTH = 40;
+    /** 缓存上限（关键词+页）：超出时先清过期，再整体减半。 */
+
+    /** 缓存上限（关键词+页）：超出时先清过期，再整体减半。 */
+    private static final int MAX_CACHE_ENTRIES = 100;
 
     private record Cached(long expiresAt, CompletionStage<List<SearchResult>> stage) {
     }
@@ -90,6 +94,7 @@ public final class NeteaseSearch {
         if (cached != null && cached.expiresAt() > now) {
             return cached.stage();
         }
+        evictIfNeeded(now);
         CompletableFuture<List<SearchResult>> future = new CompletableFuture<>();
         Cached fresh = new Cached(now + CACHE_TTL_MS, future);
         Cached existing = cache.putIfAbsent(key, fresh);
@@ -290,6 +295,21 @@ public final class NeteaseSearch {
             return object.get(key).getAsString();
         }
         return fallback;
+    }
+
+    private void evictIfNeeded(long now) {
+        if (cache.size() < MAX_CACHE_ENTRIES) {
+            return;
+        }
+        cache.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= now);
+        if (cache.size() >= MAX_CACHE_ENTRIES) {
+            int target = MAX_CACHE_ENTRIES / 2;
+            var iterator = cache.keySet().iterator();
+            while (cache.size() > target && iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
     }
 
     private static Throwable unwrap(Throwable error) {

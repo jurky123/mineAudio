@@ -43,6 +43,7 @@ public final class ClientProtocolService {
             public void onQuit(PlayerQuitEvent event) {
                 registry.remove(event.getPlayer().getUniqueId());
                 stateCache.clear(event.getPlayer());
+                lastSeekRequests.remove(event.getPlayer().getUniqueId());
             }
         }, plugin);
     }
@@ -50,6 +51,7 @@ public final class ClientProtocolService {
     public void unregister() {
         Bukkit.getMessenger().unregisterIncomingPluginChannel(plugin, ProtocolVersion.CHANNEL, listener);
         Bukkit.getMessenger().unregisterOutgoingPluginChannel(plugin, ProtocolVersion.CHANNEL);
+        lastSeekRequests.clear();
     }
 
     public ClientConnectionRegistry registry() {

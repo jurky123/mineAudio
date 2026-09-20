@@ -34,6 +34,8 @@ public final class PlaybackClock {
     private boolean running;
     private long durationMs;
     private String errorCode;
+    /** 解码器已结束（但输出可能排空/暂停中）：恢复/定位路径据此回到 DRAINING 而非 BUFFERING。 */
+    private boolean decoderEndedFlag;
     /**
      * 用户暂停意图：与“输出阶段”分离。LOADING 时暂停只记住意图（输出阶段不变），
      * 输出就绪或恢复时按意图决定是否真正进入 PAUSED/继续等待。
@@ -48,6 +50,7 @@ public final class PlaybackClock {
         this.durationMs = Math.max(0, durationMs);
         this.errorCode = null;
         this.userPaused = false;
+        this.decoderEndedFlag = false;
     }
 
     public synchronized void setDuration(long durationMs) {
@@ -61,6 +64,7 @@ public final class PlaybackClock {
     /** 首批 PCM 真正开始输出：无暂停意图时进入 PLAYING，有意图时保持 PAUSED。 */
     public synchronized void onOutputStarted(long mediaPositionMs) {
         if (state == State.FINISHED || state == State.ERROR) return;
+        decoderEndedFlag = false;
         anchor(mediaPositionMs);
         if (userPaused) {
             state = State.PAUSED;
@@ -77,6 +81,7 @@ public final class PlaybackClock {
      */
     public synchronized void onSeekRequested() {
         if (state == State.FINISHED || state == State.ERROR) return;
+        decoderEndedFlag = false;
         freeze();
         running = false;
         if (state != State.PAUSED) {
@@ -97,20 +102,36 @@ public final class PlaybackClock {
         }
     }
 
-    /** 暂停：记录意图；PLAYING/BUFFERING 同时冻结并进入 PAUSED，LOADING 只记住意图。 */
+    /**
+     * 暂停：记录意图；PLAYING/BUFFERING/DRAINING 冻结（DRAINING 保留状态，恢复后继续等待耗尽）。
+     */
     public synchronized void onPause() {
         userPaused = true;
-        if (state != State.PLAYING && state != State.BUFFERING) return;
+        if (state != State.PLAYING && state != State.BUFFERING && state != State.DRAINING) return;
         freeze();
-        state = State.PAUSED;
+        if (state != State.DRAINING) {
+            state = State.PAUSED;
+        }
     }
 
-    /** 恢复：清除意图；PAUSED 进入 BUFFERING，等重新定位后的首帧再进入 PLAYING。 */
+    /** 恢复：清除意图；从 DRAINING 暂停恢复时回到 DRAINING 继续等待耗尽。 */
     public synchronized void onResume() {
         userPaused = false;
-        if (state != State.PAUSED) return;
-        state = State.BUFFERING;
-        running = false;
+        if (state == State.PAUSED) {
+            if (decoderEndedFlag) {
+                // 暂停期间解码器已结束：回到 DRAINING 继续等待输出耗尽，而不是 BUFFERING
+                state = State.DRAINING;
+                anchor(anchorPositionMs);
+                running = true;
+                return;
+            }
+            state = State.BUFFERING;
+            running = false;
+        } else if (state == State.DRAINING) {
+            // 暂停期间的纳秒锚已过期：用冻结位置重新起锚，避免恢复瞬间跳变
+            anchor(anchorPositionMs);
+            running = true;
+        }
     }
 
     /** 欠载：冻结当前位置并等待补数。 */
@@ -120,10 +141,13 @@ public final class PlaybackClock {
         state = State.BUFFERING;
     }
 
-    /** 解码结束但输出缓冲可能仍有音频：进入 DRAINING，位置继续外推。 */
+    /** 解码结束但输出缓冲可能仍有音频：进入 DRAINING，位置继续外推；暂停中只记标记。 */
     public synchronized void onDecoderEnded() {
         if (state == State.FINISHED || state == State.ERROR) return;
-        state = State.DRAINING;
+        decoderEndedFlag = true;
+        if (!userPaused) {
+            state = State.DRAINING;
+        }
     }
 
     /** 输出耗尽：冻结并 FINISHED。 */
@@ -131,6 +155,7 @@ public final class PlaybackClock {
         if (state == State.FINISHED || state == State.ERROR) return;
         freeze();
         state = State.FINISHED;
+        decoderEndedFlag = false;
     }
 
     public synchronized void onError(String code) {
@@ -138,6 +163,7 @@ public final class PlaybackClock {
         freeze();
         state = State.ERROR;
         errorCode = code;
+        decoderEndedFlag = false;
     }
 
     public synchronized State state() {

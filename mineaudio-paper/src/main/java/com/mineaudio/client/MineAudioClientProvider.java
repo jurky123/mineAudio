@@ -138,6 +138,11 @@ public final class MineAudioClientProvider implements StreamProvider {
                 request.timing().revision(),
                 ProtocolCodec.data(new Packets.ErrorReport(kind, message))));
         handle.fail(kind, message);
+        // 解析失败同样走统一终态：清理会话并按队列规则续播（失败 MUSIC 会跳过坏曲继续）
+        if (plugin.orchestrator() != null) {
+            plugin.orchestrator().onClientTerminal(player, request.sessionId().toString(),
+                    false, kind, message);
+        }
     }
 
     private static ResolveException resolveException(Throwable error) {

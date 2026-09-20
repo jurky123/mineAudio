@@ -332,6 +332,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final Object ioLock = new Object();
         private volatile boolean draining;
         private volatile long drainDeadlineAt;
+        private volatile long drainStartedAt;
         private static final long SEEK_FILTER_TOLERANCE_MS = 1500;
         private static final long SEEK_FILTER_TIMEOUT_MS = 3000;
 
@@ -541,9 +542,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 current.execute(channel -> channel.setVolume(effective));
             }
             if (current == null) return;
-            if (!clock.paused() && draining && System.currentTimeMillis() >= drainDeadlineAt) {
-                finishNow();
-                return;
+            if (!clock.paused() && draining) {
+                // 输出耗尽确认：环形缓冲仍有数据则顺延截止（实际输出为准），同时设绝对上限防卡死
+                if (ring.available() > 0) {
+                    drainDeadlineAt = System.currentTimeMillis() + ring.available() / BYTES_PER_MS + 800;
+                }
+                if (System.currentTimeMillis() >= drainDeadlineAt
+                        || System.currentTimeMillis() - drainStartedAt > 60_000L) {
+                    finishNow();
+                    return;
+                }
             }
             if (clock.paused()) {
                 // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停止
@@ -596,8 +604,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             } else {
                 clock.onResume();
                 decoder.setPaused(false);
-                // 从冻结位置精确重定位（重连一次，换取不跳帧、无残留队列）
-                relocate(0, clock.positionMs());
+                // 从冻结位置精确重定位；若有未完成的定位目标，恢复到目标而不是旧位置
+                long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
+                relocate(0, resumeAt);
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",
@@ -706,7 +715,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             String state = clock.stateName();
             if (clock.paused()
                     && (clock.state() == com.mineaudio.client.playback.PlaybackClock.State.LOADING
-                    || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.BUFFERING)) {
+                    || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.BUFFERING
+                    || clock.state() == com.mineaudio.client.playback.PlaybackClock.State.DRAINING)) {
                 state = "PAUSED";
             }
             long decoderDuration = decoder.durationMs();
@@ -758,10 +768,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     // seek 后 LavaPlayer 内部仍在吐旧位置帧：丢弃，等目标附近的帧
                     return;
                 } else {
+                    // 超时：不做成功确认（不更新 lastCommandId），只按该帧自身时间戳起锚，
+                    // 让 UI 显示实际位置；服务端超时后回滚“定位未生效”
                     pendingSeekTargetMs = -1;
                     if (!clock.paused()) {
-                        clock.onSeekApplied(target);
-                        lastCommandId = pendingSeekRequestId;
+                        clock.onSeekApplied(timecodeMs);
                         report();
                     }
                 }
@@ -804,7 +815,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             // 解码结束但输出缓冲还有音频：先进入 DRAINING，等播放时钟走完再 FINISHED
             if (clock.ended() || draining) return;
             draining = true;
-            drainDeadlineAt = System.currentTimeMillis() + ring.available() / BYTES_PER_MS + 800;
+            drainStartedAt = System.currentTimeMillis();
+            drainDeadlineAt = drainStartedAt + ring.available() / BYTES_PER_MS + 800;
             clock.onDecoderEnded();
             report();
         }

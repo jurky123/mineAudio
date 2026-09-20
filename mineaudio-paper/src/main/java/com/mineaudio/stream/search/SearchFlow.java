@@ -22,6 +22,15 @@ public final class SearchFlow {
 
     private static final Map<UUID, Long> GENERATIONS = new ConcurrentHashMap<>();
 
+    /** 玩家退出/插件停用时清理，避免旧代际污染下次会话。 */
+    public static void clear(UUID playerId) {
+        GENERATIONS.remove(playerId);
+    }
+
+    public static void clearAll() {
+        GENERATIONS.clear();
+    }
+
     /**
      * @param display 在主线程回调（results 为 null 表示失败，看 error）
      */

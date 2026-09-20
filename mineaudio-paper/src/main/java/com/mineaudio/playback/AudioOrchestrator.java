@@ -66,6 +66,8 @@ public final class AudioOrchestrator implements MineAudio {
 
     private final Map<UUID, SearchQuery> searchQueries = new HashMap<>();
     private final Map<UUID, BukkitTask> finishTasks = new HashMap<>();
+    /** 已做过终态收尾（清理/事件/续播）的 playback id：同一终态收到两次只处理一次。 */
+    private final java.util.Set<UUID> terminalSessions = new java.util.HashSet<>();
 
     public AudioOrchestrator(MineAudioPlugin plugin, TrackRegistry tracks, CueRegistry cues,
                              BackendRegistry backends, PlayerPackStatus packStatus,
@@ -403,6 +405,7 @@ public final class AudioOrchestrator implements MineAudio {
         if (state != null) {
             for (PlaybackSession playback : state.sessions()) {
                 cancelFinish(playback.id());
+                terminalSessions.remove(playback.id());
                 playback.handle().stop();
             }
         }
@@ -433,6 +436,7 @@ public final class AudioOrchestrator implements MineAudio {
         states.clear();
         playQueues.clear();
         searchQueries.clear();
+        terminalSessions.clear();
     }
 
     /** /mineaudio debug：列出该玩家当前会话。 */
@@ -573,7 +577,7 @@ public final class AudioOrchestrator implements MineAudio {
         PlaybackSession session = state.sessions().stream()
                 .filter(s -> s.handle().id().toString().equals(sessionId))
                 .findFirst().orElse(null);
-        if (session == null) return;
+        if (session == null || !markTerminal(session)) return;
         cancelFinish(session.id());
         state.remove(session);
         removeFromActiveSessions(player.getUniqueId(), session);
@@ -611,9 +615,18 @@ public final class AudioOrchestrator implements MineAudio {
                 : Math.max(1, duration / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             finishTasks.remove(playback.id());
+            // 只有该会话仍是当前 MUSIC 且未被收尾过，才清理 + 停止 + 续播
+            if (!markTerminal(playback)) {
+                return;
+            }
             PlayerAudioState state = states.get(player.getUniqueId());
-            if (state != null) state.remove(playback);
+            if (state == null || state.music() != playback) {
+                terminalSessions.remove(playback.id());
+                return;
+            }
+            state.remove(playback);
             removeFromActiveSessions(player.getUniqueId(), playback);
+            playback.handle().stop();
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, playback.track()));
             // 非 STREAM 后端的自然结束同样续播队列；环境音（AMBIENT）永不推进
             if (playback.track().bus() == AudioBus.MUSIC) {
@@ -642,6 +655,13 @@ public final class AudioOrchestrator implements MineAudio {
                 return;
             }
         }
+    }
+
+    /**
+     * 终态只处理一次：清理、事件、队列推进。返回 false 表示此前已收尾过，调用方直接返回。
+     */
+    private boolean markTerminal(PlaybackSession session) {
+        return terminalSessions.add(session.id());
     }
 
     private void cancelFinish(UUID playbackId) {

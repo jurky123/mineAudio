@@ -16,6 +16,10 @@ public final class ResolutionCache {
 
     private static final long FALLBACK_TTL_MS = 5 * 60_000L;
     private static final long REFRESH_MARGIN_MS = 60_000L;
+    /** 条目上限：超出时先清过期，再整体减半，防止长期运行无界增长。 */
+
+    /** 条目上限：超出时先清过期，再整体减半，防止长期运行无界增长。 */
+    private static final int MAX_ENTRIES = 256;
 
     private final ConcurrentHashMap<String, Entry> entries = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<ResolveResult>> inFlight = new ConcurrentHashMap<>();
@@ -48,6 +52,7 @@ public final class ResolutionCache {
                 future.completeExceptionally(unwrap(error));
                 return;
             }
+            evictIfNeeded();
             entries.put(key, new Entry(result, refreshAfter(result)));
             future.complete(result);
         });
@@ -56,6 +61,22 @@ public final class ResolutionCache {
 
     public void invalidate(String key) {
         entries.remove(key);
+    }
+
+    private void evictIfNeeded() {
+        if (entries.size() < MAX_ENTRIES) {
+            return;
+        }
+        long now = clock.getAsLong();
+        entries.entrySet().removeIf(entry -> now >= entry.getValue().refreshAfterMs());
+        if (entries.size() >= MAX_ENTRIES) {
+            int target = MAX_ENTRIES / 2;
+            var iterator = entries.keySet().iterator();
+            while (entries.size() > target && iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
     }
 
     private long refreshAfter(ResolveResult result) {
