@@ -363,6 +363,12 @@ Phase 3 已完成（界面部分）：MineUI 音乐界面（当前播放 + 进�
 
 ### 已知修复
 
+- **v0.3.0**：引入每玩家 **Music Arbiter**（`MusicLayer` + `MusicIntent` + `MusicArbiter`）——
+  MUSIC 各来源只声明“应该存在什么”，`reconcileMusic` 是唯一实际播放入口，按
+  **个人点播 > 业务受众 > 区域 > 世界** 选唯一 winner。修复全服/个人互相顶替、`refresh` 反抢、
+  被顶替的下层无法恢复、点歌队列被全服音乐卡住；队列推进 A→B 原子完成，不经过全服；
+  `ActiveSession` 只表示逻辑会话（时间轴/来源/生命周期），不再持有每玩家实际播放；
+  客户端加固为任一时刻至多一条 MUSIC 会话
 - **v0.2.13**：DRAINING 终态改为“真实输出完成”判定——解码器 EOF 后 `PcmAudioStream` 不再无限补静音，
   环形缓冲喂完即返回真实 EOF，等 OpenAL 把已排队缓冲播完（源 stopped / MC release channel）才 FINISHED；
   排空 watchdog 不再计暂停时长（修复 >60s 暂停恢复被立即判结束）

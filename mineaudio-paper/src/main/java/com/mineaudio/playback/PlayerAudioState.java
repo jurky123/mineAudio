@@ -1,5 +1,6 @@
 package com.mineaudio.playback;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,13 +11,15 @@ import com.mineaudio.api.AudioBus;
 import net.kyori.adventure.key.Key;
 
 /**
- * 每玩家音频状态：MUSIC 单会话，AMBIENT 可多层（按曲目 ID 去重），
- * SFX / UI 短音效不落表。API 显式点播的会话不会被区域/世界层顶替。
+ * 每玩家音频状态：MUSIC 由 {@link MusicArbiter} 选曲后只保留唯一实际播放会话，
+ * AMBIENT 可多层（按曲目 ID 去重），SFX / UI 短音效不落表。
  */
 public final class PlayerAudioState {
 
     private final UUID playerId;
-    private PlaybackSession music;
+    private final MusicArbiter musicArbiter = new MusicArbiter();
+    private PlaybackSession playingMusic;
+    private MusicIntent playingMusicIntent;
     private final Map<Key, PlaybackSession> ambient = new LinkedHashMap<>();
 
     public PlayerAudioState(UUID playerId) {
@@ -27,58 +30,35 @@ public final class PlayerAudioState {
         return playerId;
     }
 
-    /** 新会话能否顶替当前同 Bus 会话。 */
-    public boolean accepts(PlaybackSession incoming) {
-        return switch (incoming.track().bus()) {
-            case MUSIC -> music == null || music.origin() != PlaybackOrigin.API
-                    || incoming.origin() == PlaybackOrigin.API;
-            case AMBIENT -> {
-                PlaybackSession existing = ambient.get(incoming.track().id());
-                yield existing == null || existing.origin() != PlaybackOrigin.API
-                        || incoming.origin() == PlaybackOrigin.API;
-            }
-            case SFX, UI -> true;
-        };
+    public MusicArbiter musicArbiter() {
+        return musicArbiter;
     }
 
-    /** 放入会话，返回被顶替的同 Bus 会话（用于停止与事件）。 */
-    public PlaybackSession replace(PlaybackSession session) {
-        return switch (session.track().bus()) {
-            case MUSIC -> {
-                PlaybackSession previous = music;
-                music = session;
-                yield previous;
-            }
-            case AMBIENT -> ambient.put(session.track().id(), session);
-            case SFX, UI -> null;
-        };
+    /** 当前实际在播的 MUSIC 会话（可能为 null）。 */
+    public PlaybackSession playingMusic() {
+        return playingMusic;
     }
 
-    public boolean remove(PlaybackSession session) {
-        return switch (session.track().bus()) {
-            case MUSIC -> {
-                boolean removed = music == session;
-                if (removed) music = null;
-                yield removed;
-            }
-            case AMBIENT -> ambient.remove(session.track().id(), session);
-            case SFX, UI -> false;
-        };
+    /** 当前实际在播的 MUSIC 对应的 intent（可能为 null）。 */
+    public MusicIntent playingMusicIntent() {
+        return playingMusicIntent;
     }
 
-    public List<PlaybackSession> sessionsOn(AudioBus bus) {
-        return sessions().stream().filter(session -> session.track().bus() == bus).toList();
+    public void setPlayingMusic(PlaybackSession session, MusicIntent intent) {
+        this.playingMusic = session;
+        this.playingMusicIntent = intent;
     }
 
-    public List<PlaybackSession> sessions() {
-        List<PlaybackSession> sessions = new java.util.ArrayList<>();
-        if (music != null) sessions.add(music);
-        sessions.addAll(ambient.values());
-        return sessions;
+    // ---------- AMBIENT ----------
+
+    /** 放入 AMBIENT 会话，返回被同曲目顶替的旧会话；非 AMBIENT 不入表。 */
+    public PlaybackSession putAmbient(PlaybackSession session) {
+        if (session.track().bus() != AudioBus.AMBIENT) return null;
+        return ambient.put(session.track().id(), session);
     }
 
-    public PlaybackSession music() {
-        return music;
+    public boolean removeAmbient(PlaybackSession session) {
+        return ambient.remove(session.track().id(), session);
     }
 
     public PlaybackSession ambient(Key trackId) {
@@ -87,5 +67,32 @@ public final class PlayerAudioState {
 
     public int ambientCount() {
         return ambient.size();
+    }
+
+    public List<PlaybackSession> ambientSessions() {
+        return List.copyOf(ambient.values());
+    }
+
+    // ---------- 通用查询 ----------
+
+    public List<PlaybackSession> sessions() {
+        List<PlaybackSession> sessions = new ArrayList<>();
+        if (playingMusic != null) sessions.add(playingMusic);
+        sessions.addAll(ambient.values());
+        return sessions;
+    }
+
+    public List<PlaybackSession> sessionsOn(AudioBus bus) {
+        return sessions().stream().filter(session -> session.track().bus() == bus).toList();
+    }
+
+    /** 移除任意会话（MUSIC 或 AMBIENT），用于 stop / 断线清理。 */
+    public boolean remove(PlaybackSession session) {
+        if (playingMusic == session) {
+            playingMusic = null;
+            playingMusicIntent = null;
+            return true;
+        }
+        return ambient.remove(session.track().id(), session);
     }
 }

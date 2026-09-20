@@ -144,8 +144,15 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (existing != null) existing.stop();
         Session session = new Session(sessionId, play);
         sessions.put(sessionId, session);
-        // 本地控件只针对 MUSIC；环境音/音效会话永不成为 current
+        // 本地控件只针对 MUSIC；环境音/音效会话永不成为 current。
+        // 不变量：本客户端任一时刻至多一条 MUSIC 会话，收到新 MUSIC 时停掉其它 MUSIC（防包序/旧服务端叠加）
         if ("MUSIC".equalsIgnoreCase(play.bus())) {
+            for (Session other : List.copyOf(sessions.values())) {
+                if (other != session && "MUSIC".equalsIgnoreCase(other.bus)) {
+                    sessions.remove(other.id);
+                    other.stop();
+                }
+            }
             current = session;
         }
         session.start();

@@ -31,8 +31,11 @@
 '> 2026-09-20 追加：DRAINING 终态从“ring 估算 + 800ms”改为“真实输出完成”——`PcmAudioStream`
 '> 在解码器 EOF 后排空 ring 即返回真实 EOF，等 OpenAL 播完已排队缓冲（源 stopped / MC release channel）
 '> 才 FINISHED；watchdog 不计暂停时长（客户端 0.2.13）。这是曲尾被提前 FINISHED 后服务端 STOP 掉尾部的直接修复。
-'> 后续（按评审优先级）：P1 引入服务端 Music Arbiter（Personal > Audience > Region > World，
-'> 唯一 reconcile 入口，ActiveSession 只表示逻辑会话）；P2 客户端单 MUSIC 不变量；P2 集成测试。
+'> 2026-09-20 追加：引入每玩家 Music Arbiter（`MusicLayer`/`MusicIntent`/`MusicArbiter`，纯 Java 可单测）：
+'> MUSIC 各来源（个人/受众/区域/世界）只声明 intent，`reconcileMusic` 唯一实际播放入口，
+'> 优先级 PERSONAL > AUDIENCE > REGION > WORLD；修复全服/个人互相顶替、refresh 反抢、下层无法恢复、
+'> 队列被全服卡住；队列 A→B 原子推进；ActiveSession 只表示逻辑会话；客户端至多一条 MUSIC 不变量（0.3.0）。
+'> 后续：P2 集成场景测试；MineUNO/MineChess 接入。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

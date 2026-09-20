@@ -29,13 +29,18 @@ class PlayerAudioStateTest {
     }
 
     @Test
-    void musicIsSingleSession() {
+    void playingMusicIsSingleSlot() {
         PlaybackSession first = session("mineaudio:one", AudioBus.MUSIC);
         PlaybackSession second = session("mineaudio:two", AudioBus.MUSIC);
+        MusicIntent intent = new MusicIntent("personal", MusicLayer.PERSONAL, 1,
+                first.track(), PlaybackOptions.DEFAULT, PlaybackOrigin.API, null);
 
-        assertNull(state.replace(first));
-        assertEquals(first, state.replace(second));
-        assertEquals(second, state.music());
+        state.setPlayingMusic(first, intent);
+        assertEquals(first, state.playingMusic());
+        assertEquals(intent, state.playingMusicIntent());
+
+        state.setPlayingMusic(second, intent);
+        assertEquals(second, state.playingMusic());
         assertEquals(1, state.sessions().size());
     }
 
@@ -43,20 +48,22 @@ class PlayerAudioStateTest {
     void ambientAllowsMultipleAndReplacesSameTrack() {
         PlaybackSession first = session("mineaudio:rain", AudioBus.AMBIENT);
         PlaybackSession second = session("mineaudio:fireplace", AudioBus.AMBIENT);
-        assertNull(state.replace(first));
-        assertNull(state.replace(second));
+        assertNull(state.putAmbient(first));
+        assertNull(state.putAmbient(second));
         assertEquals(2, state.ambientCount());
 
         PlaybackSession firstAgain = session("mineaudio:rain", AudioBus.AMBIENT);
-        assertEquals(first, state.replace(firstAgain));
+        assertEquals(first, state.putAmbient(firstAgain));
         assertEquals(2, state.ambientCount());
     }
 
     @Test
     void sessionsOnFiltersByBus() {
-        state.replace(session("mineaudio:music", AudioBus.MUSIC));
-        state.replace(session("mineaudio:rain", AudioBus.AMBIENT));
-        state.replace(session("mineaudio:fireplace", AudioBus.AMBIENT));
+        PlaybackSession music = session("mineaudio:music", AudioBus.MUSIC);
+        state.setPlayingMusic(music, new MusicIntent("personal", MusicLayer.PERSONAL, 1,
+                music.track(), PlaybackOptions.DEFAULT, PlaybackOrigin.API, null));
+        state.putAmbient(session("mineaudio:rain", AudioBus.AMBIENT));
+        state.putAmbient(session("mineaudio:fireplace", AudioBus.AMBIENT));
 
         assertEquals(1, state.sessionsOn(AudioBus.MUSIC).size());
         assertEquals(2, state.sessionsOn(AudioBus.AMBIENT).size());
@@ -66,14 +73,16 @@ class PlayerAudioStateTest {
     @Test
     void removeDropsSession() {
         PlaybackSession music = session("mineaudio:music", AudioBus.MUSIC);
-        state.replace(music);
+        state.setPlayingMusic(music, new MusicIntent("personal", MusicLayer.PERSONAL, 1,
+                music.track(), PlaybackOptions.DEFAULT, PlaybackOrigin.API, null));
         assertTrue(state.remove(music));
         assertTrue(state.sessions().isEmpty());
     }
 
     @Test
     void sfxSessionsAreNotTracked() {
-        state.replace(session("mineaudio:ding", AudioBus.SFX));
+        PlaybackSession sfx = session("mineaudio:ding", AudioBus.SFX);
+        state.putAmbient(sfx);
         assertTrue(state.sessions().isEmpty());
     }
 }

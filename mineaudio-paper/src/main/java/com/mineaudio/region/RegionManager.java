@@ -129,20 +129,15 @@ public final class RegionManager {
         List<AudioRegion> active = activeRegions(hysteresis);
         RegionParser.WorldLayer worldLayer = worlds.get(player.getWorld().getName());
         Key desired = RegionSelection.selectMusic(active, worldLayer == null ? null : worldLayer.music());
-        PlaybackOrigin origin = RegionSelection.fromRegion(active, desired)
-                ? PlaybackOrigin.REGION : PlaybackOrigin.WORLD;
-
-        PlaybackSession current = plugin.orchestrator().currentMusic(player);
-        if (current != null) {
-            if (desired != null && current.track().id().equals(desired)) return;
-            if (current.origin() == PlaybackOrigin.API) return;
-        }
         if (desired == null) {
             plugin.orchestrator().stopManagedMusic(player);
             return;
         }
+        PlaybackOrigin origin = RegionSelection.fromRegion(active, desired)
+                ? PlaybackOrigin.REGION : PlaybackOrigin.WORLD;
         AudioTrack track = plugin.trackRegistry().get(desired).orElse(null);
         if (track != null) {
+            // 只声明“希望有这条 region/world 音乐”；能否真正播放由 MusicArbiter 按优先级决定
             plugin.orchestrator().playManaged(player, track, origin);
         }
     }
