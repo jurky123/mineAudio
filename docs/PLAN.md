@@ -28,6 +28,11 @@
 '> 2026-09-20 追加：彻底修复尾部暂停恢复跳播——暂停/恢复一律只 pause/unpause OpenAL 通道保留已排队音频，
 '> 不再按播放时钟重定位（墙钟因解码饥饿补静音而漂移到实际音频之前，曲末漂移最大导致跳过一段）；
 '> PlaybackClock 新增 resumeFromOutput 直接回到 PLAYING/DRAINING 不经过 BUFFERING（客户端 0.2.12）。
+'> 2026-09-20 追加：DRAINING 终态从“ring 估算 + 800ms”改为“真实输出完成”——`PcmAudioStream`
+'> 在解码器 EOF 后排空 ring 即返回真实 EOF，等 OpenAL 播完已排队缓冲（源 stopped / MC release channel）
+'> 才 FINISHED；watchdog 不计暂停时长（客户端 0.2.13）。这是曲尾被提前 FINISHED 后服务端 STOP 掉尾部的直接修复。
+'> 后续（按评审优先级）：P1 引入服务端 Music Arbiter（Personal > Audience > Region > World，
+'> 唯一 reconcile 入口，ActiveSession 只表示逻辑会话）；P2 客户端单 MUSIC 不变量；P2 集成测试。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

@@ -24,6 +24,10 @@ public final class PcmAudioStream implements AudioStream {
     private final AudioFormat format = new AudioFormat(48000f, 16, 2, true, false);
     private final Object lock = new Object();
     private volatile boolean ended;
+    /** 解码器已结束：环形缓冲排空后进入真实 EOF，不再补静音。 */
+    private volatile boolean inputEnded;
+    /** 已向 Minecraft 返回过流结束（环形缓冲真正排空）。 */
+    private volatile boolean eofReached;
 
     public PcmAudioStream(PcmRingBuffer ring) {
         this.ring = ring;
@@ -31,13 +35,29 @@ public final class PcmAudioStream implements AudioStream {
 
     public void markEnded() {
         ended = true;
+        inputEnded = true;
         synchronized (lock) {
             lock.notifyAll();
         }
     }
 
+    /** 解码器 EOF：把剩余 PCM 喂完后由 {@link #read} 返回 null（真实流结束）。 */
+    public void markInputEnded() {
+        inputEnded = true;
+        synchronized (lock) {
+            lock.notifyAll();
+        }
+    }
+
+    /** 是否已向音频层报告真实 EOF（供 DRAINING 判定输出是否吃完）。 */
+    public boolean eofReached() {
+        return eofReached;
+    }
+
     public void reset() {
         ended = false;
+        inputEnded = false;
+        eofReached = false;
     }
 
     @Override
@@ -54,7 +74,15 @@ public final class PcmAudioStream implements AudioStream {
         while (read == 0) {
             read = ring.read(chunk, 0, size);
             if (read > 0) break;
-            if (ended) return null;
+            if (ended) {
+                eofReached = true;
+                return null;
+            }
+            // 解码器已结束且环形缓冲已空：这才是“输入真的没有了”，让 OpenAL 吃完队列后自然停止
+            if (inputEnded) {
+                eofReached = true;
+                return null;
+            }
             synchronized (lock) {
                 try {
                     lock.wait(WAIT_MS);

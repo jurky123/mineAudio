@@ -329,10 +329,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** seek 与 PCM 写入的串行化锁：保证“检查代际+写入”与“seek+清空”互斥。 */
         private final Object ioLock = new Object();
         private volatile boolean draining;
-        private volatile long drainDeadlineAt;
         private volatile long drainStartedAt;
-        /** 排空中进入暂停的时刻：恢复时把这段时间加回排空截止，避免暂停耗尽尾部。 */
+        /** 排空中进入暂停的时刻：恢复时把这段时间加回排空计时，避免暂停耗尽尾部。 */
         private volatile long drainPauseStartMs;
+        /** OpenAL 源真正停止（排队缓冲播完）：由声音线程回填，供 DRAINING 终态判定。 */
+        private final java.util.concurrent.atomic.AtomicBoolean drainChannelStopped =
+                new java.util.concurrent.atomic.AtomicBoolean();
         private static final long SEEK_FILTER_TOLERANCE_MS = 1500;
         private static final long SEEK_FILTER_TIMEOUT_MS = 3000;
 
@@ -543,15 +545,26 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             }
             if (current == null) return;
             if (!clock.paused() && draining) {
-                // 输出耗尽确认：环形缓冲仍有数据则顺延截止（实际输出为准），同时设绝对上限防卡死
-                if (ring.available() > 0) {
-                    drainDeadlineAt = System.currentTimeMillis() + ring.available() / BYTES_PER_MS + 800;
-                }
-                if (System.currentTimeMillis() >= drainDeadlineAt
-                        || System.currentTimeMillis() - drainStartedAt > 60_000L) {
+                // 输出真正吃完的判定：不是“环形缓冲估算还剩多久”，而是
+                // 1) 解码器已 EOF（PcmAudioStream 不再补静音，剩余 PCM 已全部交给 OpenAL）
+                // 2) OpenAL 把已排队缓冲播完（源 stopped → MC release channel，或声音线程观测到 stopped）
+                if (current.isStopped() || drainChannelStopped.get()) {
                     finishNow();
                     return;
                 }
+                current.execute(channel -> {
+                    if (channel.stopped()) {
+                        drainChannelStopped.set(true);
+                    }
+                });
+                // 仅作异常 watchdog：正常应由 OpenAL 停止触发；60s 不计暂停时长
+                if (System.currentTimeMillis() - drainStartedAt > 60_000L) {
+                    com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                            "[audio] DRAINING watchDog 超时 session={} ring={}B eof={}",
+                            id, ring.available(), stream.eofReached());
+                    finishNow();
+                }
+                return;
             }
             if (clock.paused()) {
                 // 兜底：暂停期间通道若被外部引擎（SoundEngine.resume 无条件 unpause）重新起播，立即重 pause。
@@ -637,8 +650,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 }
                 if (drainPauseStartMs > 0) {
                     if (wasDraining) {
-                        // 暂停时长不计入排空截止
-                        drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
+                        // 暂停时长不计入排空计时（否则长暂停后 watchdog 会误判立即结束）
+                        drainStartedAt += (System.currentTimeMillis() - drainPauseStartMs);
                     }
                     drainPauseStartMs = 0;
                 }
@@ -847,11 +860,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         @Override
         public void onEnded() {
-            // 解码结束但输出缓冲还有音频：先进入 DRAINING，等播放时钟走完再 FINISHED
+            // 解码结束但输出缓冲还有音频：先进入 DRAINING，等 OpenAL 真正播完再 FINISHED
             if (clock.ended() || draining) return;
             draining = true;
             drainStartedAt = System.currentTimeMillis();
-            drainDeadlineAt = drainStartedAt + ring.available() / BYTES_PER_MS + 800;
+            drainChannelStopped.set(false);
+            // 让 PcmAudioStream 把环形缓冲剩余 PCM 喂完后返回真实 EOF，而不是无限补静音
+            stream.markInputEnded();
             clock.onDecoderEnded();
             report();
         }
@@ -860,6 +875,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private void finishNow() {
             if (clock.finished()) return;
             draining = false;
+            ChannelAccess.ChannelHandle currentHandle = handle;
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                    "[audio] FINISHED session={} pos={}ms ring={}B eof={} channelStopped={} watchdog={}",
+                    id, clock.positionMs(), ring.available(), stream.eofReached(),
+                    currentHandle != null && (currentHandle.isStopped() || drainChannelStopped.get()),
+                    System.currentTimeMillis() - drainStartedAt >= 60_000L);
             clock.onDrained();
             if (current == this) {
                 reselectCurrent();
