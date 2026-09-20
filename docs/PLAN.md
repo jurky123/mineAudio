@@ -23,6 +23,9 @@
 '
 '> 自然结束自动续播；UI 输入框/结果列表/队列管理；客户端无需更新）。
 '
+'> 2026-09-20 追加：修复客户端暂停后恢复跳回 bug——非排空恢复路径解码器先于重定位解冻导致帧竞态，
+'> 现改为先停旧通道、再 relocate、最后解冻解码器；排空路径 wasDraining 判定提前防止状态竞变（客户端 0.2.11）。
+'
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
 > （最小 eapi，仅 song/enhance/player/url/v1）+ `ResolutionCache`（TTL + 同曲合并）+ 失败分类 +

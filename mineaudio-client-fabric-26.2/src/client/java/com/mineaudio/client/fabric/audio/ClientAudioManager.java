@@ -618,11 +618,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                     }
                 }
             } else {
-                clock.onResume();
-                decoder.setPaused(false);
-                if (draining && decoder.finished() && drainPauseStartMs > 0) {
+                // 先判定排空状态，避免解码器恢复后状态竞变
+                boolean wasDraining = draining && decoder.finished();
+                if (wasDraining && drainPauseStartMs > 0) {
                     // 排空中暂停：通道从未被 stop（只是 pause），直接恢复即可；
                     // 不重新定位、不清空 PCM、不重建通道。暂停时长不计入排空截止
+                    clock.onResume();
+                    decoder.setPaused(false);
                     drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
                     drainPauseStartMs = 0;
                     pendingSeekTargetMs = -1;
@@ -636,9 +638,16 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                         ensureChannel();
                     }
                 } else {
-                    // 从冻结位置精确重定位；若有未完成的定位目标，恢复到目标而不是旧位置
+                    // 非排空恢复：先停旧通道防泵回放旧数据，再从冻结位置重定位，最后恢复解码
                     long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
+                    ChannelAccess.ChannelHandle old = handle;
+                    handle = null;
+                    if (old != null) {
+                        old.execute(Channel::stop);
+                    }
+                    clock.onResume();
                     relocate(0, resumeAt);
+                    decoder.setPaused(false);
                 }
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
