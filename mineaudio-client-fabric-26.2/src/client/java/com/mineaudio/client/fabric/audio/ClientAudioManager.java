@@ -333,6 +333,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private volatile boolean draining;
         private volatile long drainDeadlineAt;
         private volatile long drainStartedAt;
+        /** 排空中进入暂停的时刻：恢复时把这段时间加回排空截止，避免暂停耗尽尾部。 */
+        private volatile long drainPauseStartMs;
         private static final long SEEK_FILTER_TOLERANCE_MS = 1500;
         private static final long SEEK_FILTER_TIMEOUT_MS = 3000;
 
@@ -594,6 +596,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             if (clock.paused() == value) return; // 幂等：重复 resume/pause 不重置锚点
             if (value) {
                 clock.onPause();
+                drainPauseStartMs = System.currentTimeMillis();
                 decoder.setPaused(true);
                 // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
                 // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
@@ -604,9 +607,25 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             } else {
                 clock.onResume();
                 decoder.setPaused(false);
-                // 从冻结位置精确重定位；若有未完成的定位目标，恢复到目标而不是旧位置
-                long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
-                relocate(0, resumeAt);
+                if (draining && decoder.finished() && drainPauseStartMs > 0) {
+                    // 排空中暂停：只重建通道继续排空，不重新定位、不清空 PCM；
+                    // 暂停时长不计入排空截止
+                    drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
+                    drainPauseStartMs = 0;
+                    pendingSeekTargetMs = -1;
+                    ChannelAccess.ChannelHandle old = handle;
+                    handle = null;
+                    channelEpoch.incrementAndGet();
+                    channelRequested.set(false);
+                    if (old != null) {
+                        old.execute(Channel::stop);
+                    }
+                    ensureChannel();
+                } else {
+                    // 从冻结位置精确重定位；若有未完成的定位目标，恢复到目标而不是旧位置
+                    long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
+                    relocate(0, resumeAt);
+                }
             }
             com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                     "[audio] {} session={} pos={}ms started={}",

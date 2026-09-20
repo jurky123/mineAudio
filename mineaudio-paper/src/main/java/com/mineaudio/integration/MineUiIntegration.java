@@ -140,7 +140,7 @@ public final class MineUiIntegration implements AudioUi {
         if (mode != null && mode != useLocalPage(player)) {
             hudLocalModes.remove(player.getUniqueId());
             Bukkit.getScheduler().runTask(plugin, () -> {
-                if (player.isOnline()) toggleHud(player);
+                if (player.isOnline()) replaceHud(player);
             });
         }
     }
@@ -149,13 +149,36 @@ public final class MineUiIntegration implements AudioUi {
     public boolean toggleHud(Player player) {
         if (!hudSupported(player)) return false;
         UUID playerId = player.getUniqueId();
+        MineUiSession existing = hudSessions.get(playerId);
+        if (existing != null && !existing.closed()) {
+            closeHud(player, "HUD 已关闭");
+            return false;
+        }
+        return openHud(player);
+    }
+
+    /** 内部替换 HUD（后端版本变化时）：直接重建，不改变用户“已开启”的意图。 */
+    private void replaceHud(Player player) {
+        if (!hudSupported(player)) return;
+        closeHud(player, null);
+        openHud(player);
+    }
+
+    private void closeHud(Player player, String note) {
+        UUID playerId = player.getUniqueId();
         MineUiSession existing = hudSessions.remove(playerId);
+        hudLocalModes.remove(playerId);
         if (existing != null) {
             stopHudRefresher(playerId);
             if (!existing.closed()) existing.close();
-            plugin.getLogger().info("[ui] " + player.getName() + " HUD 已关闭");
-            return false;
+            if (note != null) {
+                plugin.getLogger().info("[ui] " + player.getName() + " " + note);
+            }
         }
+    }
+
+    private boolean openHud(Player player) {
+        UUID playerId = player.getUniqueId();
         boolean local = useLocalPage(player);
         JsonObject definition = local && hudPageLocal != null ? hudPageLocal : hudPage;
         String view = local && hudPageLocal != null ? "hud-local" : "hud";
@@ -308,11 +331,7 @@ public final class MineUiIntegration implements AudioUi {
         com.mineaudio.stream.search.SearchFlow.clear(player.getUniqueId());
         close(player);
         UUID playerId = player.getUniqueId();
-        stopHudRefresher(playerId);
-        MineUiSession hud = hudSessions.remove(playerId);
-        if (hud != null && !hud.closed()) {
-            hud.close();
-        }
+        closeHud(player, null);
         volumes.remove(playerId);
         pendingSeeks.remove(playerId);
         tabs.remove(playerId);
