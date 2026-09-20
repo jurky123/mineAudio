@@ -73,9 +73,8 @@ processResources {
                         ('"action": "resume"')          : '"action": "local:mineaudio.resume"',
                         ('"action": "seek_back"')       : '"action": "local:mineaudio.seek_back"',
                         ('"action": "seek_fwd"')        : '"action": "local:mineaudio.seek_fwd"',
-                        ('"action": "vol_down"')        : '"action": "local:mineaudio.volume_down"',
-                        ('"action": "vol_up"')          : '"action": "local:mineaudio.volume_up"',
-                        ('"text": "{state.volume}"')    : '"text": "{local.mineaudio.volume}%"',
+                        ('"value": "{state.volume_num}"') : '"value": "{local.mineaudio.volume}"',
+                        ('"action": "vol_set"')         : '"action": "local:mineaudio.volume"',
                         ('"spinPlaying": "{state.playing}"'): '"spinPlaying": "{local.mineaudio.playing}"',
                 ]],
                 'hud.json'   : ['hud-local.json', [

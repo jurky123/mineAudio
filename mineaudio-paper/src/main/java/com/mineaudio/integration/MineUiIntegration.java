@@ -290,8 +290,7 @@ public final class MineUiIntegration implements AudioUi {
             session.on("seek_back", action -> seekBy(player, -SEEK_STEP_MS, session));
             session.on("seek_fwd", action -> seekBy(player, SEEK_STEP_MS, session));
             session.on("seek_to", action -> seekTo(player, action.number("value", -1), session));
-            session.on("vol_down", action -> adjustVolume(player, -0.1f, session));
-            session.on("vol_up", action -> adjustVolume(player, 0.1f, session));
+            session.on("vol_set", action -> setVolumeAbsolute(player, action.number("value", -1), session));
             session.on("toggle_hud", action -> {
                 session.state("note", toggleHud(player) ? "已开启 HUD（关闭界面后可见）" : "已关闭 HUD");
                 push(player, session);
@@ -427,7 +426,7 @@ public final class MineUiIntegration implements AudioUi {
         }
         pushProgress(player, session, music == null ? null : progress, localPage);
         if (!localPage) {
-            session.state("volume", Math.round(volumeOf(player) * 100) + "%");
+            session.state("volume_num", Math.round(volumeOf(player) * 100));
         }
         session.state("stream", plugin.orchestrator().streamAvailable(player)
                 ? "流媒体客户端：已连接" : "流媒体客户端：未安装（流媒体将走 fallback）");
@@ -730,16 +729,20 @@ public final class MineUiIntegration implements AudioUi {
         }
     }
 
-    private void adjustVolume(Player player, float delta, MineUiSession session) {
+    private void setVolumeAbsolute(Player player, double percent, MineUiSession session) {
         PlaybackSession music = plugin.orchestrator().currentMusic(player);
         if (music == null) {
             session.state("note", "当前没有可调音量的音乐");
             return;
         }
-        float volume = Math.max(0f, Math.min(1f, volumeOf(player) + delta));
+        if (percent < 0 || percent > 100) {
+            session.state("note", "音量范围 0-100");
+            return;
+        }
+        float volume = (float) (percent / 100.0);
         boolean ok = music.handle().setVolume(volume);
         if (ok) volumes.put(player.getUniqueId(), volume);
-        session.state("note", ok ? "音量 " + Math.round(volume * 100) + "%" : "当前 Backend 不支持音量");
+        session.state("note", ok ? "音量 " + Math.round(percent) + "%" : "当前 Backend 不支持音量");
         push(player, session);
     }
 

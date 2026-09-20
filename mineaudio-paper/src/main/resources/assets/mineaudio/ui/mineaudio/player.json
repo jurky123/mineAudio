@@ -295,28 +295,17 @@
                   "hoverScale": 1.08
                 },
                 {
-                  "type": "button",
-                  "skin": "vanilla:button",
-                  "text": "音量 -",
-                  "action": "vol_down",
-                  "width": 56,
-                  "height": 16,
-                  "hoverScale": 1.08
-                },
-                {
-                  "type": "button",
-                  "skin": "vanilla:button",
-                  "text": "音量 +",
-                  "action": "vol_up",
-                  "width": 56,
-                  "height": 16,
-                  "hoverScale": 1.08
-                },
-                {
-                  "type": "text",
-                  "text": "{state.volume}",
-                  "color": "#C0C0C0",
-                  "scale": 0.8
+                  "type": "slider",
+                  "skin": "vanilla:slider",
+                  "width": 150,
+                  "height": 12,
+                  "min": 0,
+                  "max": 100,
+                  "step": 1,
+                  "value": "{state.volume_num}",
+                  "text": "音量 {value}%",
+                  "color": "#D0E0F0",
+                  "action": "vol_set"
                 },
                 {
                   "type": "button",

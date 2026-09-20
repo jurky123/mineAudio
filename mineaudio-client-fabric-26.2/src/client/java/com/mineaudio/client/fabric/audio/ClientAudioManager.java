@@ -257,7 +257,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         };
     }
 
-    /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume_up / volume_down。 */
+    /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume。 */
     public boolean localAction(String action, Map<String, Object> payload) {
         Session session = current;
         if (session == null) return false;
@@ -287,12 +287,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 return session.seek(localCommandSeq.incrementAndGet(),
                         duration > 0 ? Math.min(target, duration) : target) == SeekStatus.APPLIED;
             }
-            case "volume_up" -> {
-                session.setVolume(session.currentVolume() + 0.1f);
-                return true;
-            }
-            case "volume_down" -> {
-                session.setVolume(session.currentVolume() - 0.1f);
+            case "volume" -> {
+                Object value = payload == null ? null : payload.get("value");
+                if (!(value instanceof Number number)) return false;
+                session.setVolume((float) (Math.max(0, Math.min(100, number.doubleValue())) / 100.0));
                 return true;
             }
             default -> {
@@ -556,10 +554,15 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 }
             }
             if (clock.paused()) {
-                // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停止
+                // 兜底：若通道仍处于播放状态（例如外部引擎重建），立即停下；
+                // 排空尾部只 pause 不 stop，否则尾部音频会被丢弃且无法再生
                 current.execute(channel -> {
                     if (channel.playing()) {
-                        channel.stop();
+                        if (draining && decoder.finished()) {
+                            channel.pause();
+                        } else {
+                            channel.stop();
+                        }
                     }
                 });
                 return;
@@ -598,29 +601,40 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 clock.onPause();
                 drainPauseStartMs = System.currentTimeMillis();
                 decoder.setPaused(true);
-                // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
-                // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
                 ChannelAccess.ChannelHandle current = handle;
                 if (current != null) {
-                    current.execute(Channel::stop);
+                    if (draining && decoder.finished()) {
+                        // 排空尾部只 pause 不 stop：stop 会丢弃 OpenAL 队列里最后的音频，
+                        // 而解码器已结束无法重新生成。开关 UI 触发的 resume 由 pump 兜底重 pause。
+                        current.execute(channel -> {
+                            if (channel.playing()) {
+                                channel.pause();
+                            }
+                        });
+                    } else {
+                        // 直接 stop 而不是 pause：关闭界面会触发 SoundEngine.resume() 无条件 unpause；
+                        // STOPPED 通道不受影响，彻底消除“暂停中开关 UI 瞬响”
+                        current.execute(Channel::stop);
+                    }
                 }
             } else {
                 clock.onResume();
                 decoder.setPaused(false);
                 if (draining && decoder.finished() && drainPauseStartMs > 0) {
-                    // 排空中暂停：只重建通道继续排空，不重新定位、不清空 PCM；
-                    // 暂停时长不计入排空截止
+                    // 排空中暂停：通道从未被 stop（只是 pause），直接恢复即可；
+                    // 不重新定位、不清空 PCM、不重建通道。暂停时长不计入排空截止
                     drainDeadlineAt += (System.currentTimeMillis() - drainPauseStartMs);
                     drainPauseStartMs = 0;
                     pendingSeekTargetMs = -1;
-                    ChannelAccess.ChannelHandle old = handle;
-                    handle = null;
-                    channelEpoch.incrementAndGet();
-                    channelRequested.set(false);
-                    if (old != null) {
-                        old.execute(Channel::stop);
+                    ChannelAccess.ChannelHandle current = handle;
+                    if (current != null) {
+                        current.execute(Channel::unpause);
+                    } else {
+                        // 通道丢失时的兜底：重建（尾部可能已丢失）
+                        channelEpoch.incrementAndGet();
+                        channelRequested.set(false);
+                        ensureChannel();
                     }
-                    ensureChannel();
                 } else {
                     // 从冻结位置精确重定位；若有未完成的定位目标，恢复到目标而不是旧位置
                     long resumeAt = pendingSeekTargetMs >= 0 ? pendingSeekTargetMs : clock.positionMs();
