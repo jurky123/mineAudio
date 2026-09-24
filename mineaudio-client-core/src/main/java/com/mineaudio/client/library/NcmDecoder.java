@@ -50,16 +50,11 @@ public final class NcmDecoder {
         if (!java.util.Arrays.equals(magic, MAGIC)) {
             throw new IOException("不是有效的 .ncm（magic 不匹配）");
         }
-        cursor.skip(2);
+        byte[] gap = cursor.read(2);
 
         int keyLen = cursor.readIntLE();
-        byte[] key = cursor.read(keyLen);
-        for (int i = 0; i < key.length; i++) {
-            key[i] ^= 0x64;
-        }
-        key = aesDecrypt(key, META_KEY);
-        key = java.util.Arrays.copyOfRange(key, KEY_PREFIX.length(), key.length);
-        byte[] keyBox = buildKeyBox(key);
+        byte[] keyRaw = cursor.read(keyLen);
+        byte[] keyBox = deriveKeyBox(keyRaw, keyLen, gap);
 
         JsonObject meta = readMeta(cursor);
         cursor.skip(4); // crc
@@ -84,20 +79,83 @@ public final class NcmDecoder {
         return new Decoded(out, duration, title, artist, album, cover, coverExt(cover));
     }
 
+    /** 从 key 段派生 keyBox：XOR 0x64 与否两种变体都试，用 "neteasecloudmusic" 前缀校验。 */
+    private static byte[] deriveKeyBox(byte[] keyRaw, int keyLen, byte[] gap) throws IOException {
+        String lastError = null;
+        for (boolean xor : new boolean[] {true, false}) {
+            byte[] candidate = keyRaw.clone();
+            if (xor) {
+                for (int i = 0; i < candidate.length; i++) candidate[i] ^= 0x64;
+            }
+            if (candidate.length == 0 || candidate.length % 16 != 0) {
+                lastError = "len=" + candidate.length + "(len%16=" + (candidate.length % 16) + ")";
+                continue;
+            }
+            try {
+                byte[] plain = aesDecrypt(candidate, META_KEY, "key", "keyLen=" + keyLen);
+                if (plain.length > KEY_PREFIX.length() && startsWith(plain, KEY_PREFIX)) {
+                    byte[] key = java.util.Arrays.copyOfRange(plain, KEY_PREFIX.length(), plain.length);
+                    return buildKeyBox(key);
+                }
+                lastError = "前缀不匹配(xor=" + xor + ")";
+            } catch (IOException e) {
+                lastError = e.getMessage();
+            }
+        }
+        throw new IOException("key 解密失败（" + lastError + "，keyLen=" + keyLen
+                + " gap=" + hex(gap, 2) + " keyHead=" + hex(keyRaw, 8) + "）");
+    }
+
+    /** meta：XOR 0x63 与否两种变体都试，用 JSON 结构校验。 */
     private JsonObject readMeta(Cursor cursor) throws IOException {
         int metaLen = cursor.readIntLE();
-        byte[] meta = cursor.read(metaLen);
-        for (int i = 0; i < meta.length; i++) {
-            meta[i] ^= 0x63;
+        byte[] raw = cursor.read(metaLen);
+        String lastError = null;
+        for (boolean xor : new boolean[] {true, false}) {
+            try {
+                JsonObject meta = tryMeta(raw, xor);
+                if (meta != null) return meta;
+            } catch (Throwable t) {
+                lastError = t.getMessage();
+            }
         }
-        meta = Base64.getMimeDecoder().decode(meta);
-        meta = aesDecrypt(meta, META_KEY);
-        meta = java.util.Arrays.copyOfRange(meta, META_PREFIX.length(), meta.length);
+        throw new IOException("meta 解析失败（metaLen=" + metaLen + "）"
+                + (lastError == null ? "" : "：" + lastError));
+    }
+
+    private JsonObject tryMeta(byte[] raw, boolean xor) throws IOException {
+        byte[] text = raw.clone();
+        if (xor) {
+            for (int i = 0; i < text.length; i++) text[i] ^= 0x63;
+        }
+        byte[] decoded;
         try {
-            return JsonParser.parseString(new String(meta, StandardCharsets.UTF_8)).getAsJsonObject();
+            decoded = Base64.getMimeDecoder().decode(text);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (decoded.length == 0 || decoded.length % 16 != 0) return null;
+        byte[] plain = aesDecrypt(decoded, META_KEY, "meta", "len=" + decoded.length);
+        if (startsWith(plain, META_PREFIX)) {
+            plain = java.util.Arrays.copyOfRange(plain, META_PREFIX.length(), plain.length);
+        }
+        String json = new String(plain, StandardCharsets.UTF_8);
+        int brace = json.indexOf('{');
+        if (brace > 0) json = json.substring(brace);
+        try {
+            return JsonParser.parseString(json).getAsJsonObject();
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private static boolean startsWith(byte[] data, String prefix) {
+        byte[] p = prefix.getBytes(StandardCharsets.US_ASCII);
+        if (data.length < p.length) return false;
+        for (int i = 0; i < p.length; i++) {
+            if (data[i] != p[i]) return false;
+        }
+        return true;
     }
 
     private static String optString(JsonObject meta, String key) {
@@ -130,13 +188,16 @@ public final class NcmDecoder {
         }
     }
 
-    private static byte[] aesDecrypt(byte[] data, byte[] key) throws IOException {
+    private static byte[] aesDecrypt(byte[] data, byte[] key, String stage, String detail) throws IOException {
+        if (data.length == 0 || data.length % 16 != 0) {
+            throw new IOException("AES(" + stage + ") 长度非法：" + data.length + "B（" + detail + "）");
+        }
         try {
             Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
             cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"));
             return cipher.doFinal(data);
         } catch (GeneralSecurityException e) {
-            throw new IOException("AES 解密失败：" + e.getMessage(), e);
+            throw new IOException("AES(" + stage + ") 解密失败：" + e.getMessage() + "（" + detail + "）", e);
         }
     }
 
@@ -170,6 +231,14 @@ public final class NcmDecoder {
         if ((cover[0] & 0xFF) == 0xFF && (cover[1] & 0xFF) == 0xD8) return "jpg";
         if ((cover[0] & 0xFF) == 0x89 && cover[1] == 'P' && cover[2] == 'N' && cover[3] == 'G') return "png";
         return "jpg";
+    }
+
+    private static String hex(byte[] data, int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(count, data.length); i++) {
+            sb.append(String.format("%02x", data[i] & 0xFF));
+        }
+        return sb.toString();
     }
 
     private static String extension(Path file) {
