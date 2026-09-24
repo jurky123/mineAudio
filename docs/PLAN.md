@@ -45,6 +45,9 @@
 '> 点歌到全服的文件上传/分发为 M2（服务器临时缓存托管）。
 '> 2026-09-24 追加：本地曲库支持网易云 .ncm（客户端内置解密 AES+keyBox，缓存到 .decoded）、
 '> 同名 .lrc 关联存储（歌词后续显示）；NCM 解码器纯 Java 可单测（0.4.1）。
+'> 2026-09-24 追加：本地曲库 UI 因 MineUI `list.items` 仅支持 `{state.*}`（不支持 local 列表），
+'> 改为固定 8 插槽 + 本地标量绑定 `{local.mineaudio.libN_*}` + 翻页动作（0.4.2）。
+'> 歌词能力：MineUI 目前仅有通用 `list` 组件（`/mineui lyrics` 为演示），无音频同步歌词能力，MineAudio 侧未接入。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

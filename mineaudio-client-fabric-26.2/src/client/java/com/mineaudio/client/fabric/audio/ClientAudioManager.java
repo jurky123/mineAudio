@@ -70,6 +70,10 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private boolean gatewayTried;
     /** 客户端本地曲库（玩家自有文件，仅本地存储/播放）。 */
     private volatile com.mineaudio.client.fabric.library.LocalLibraryService library;
+    /** 本地曲库分页：每页固定插槽数（MineUI list 不支持 local 绑定，改用固定插槽）。 */
+    private static final int LIB_PAGE_SIZE = 8;
+    private volatile int libPage;
+    private volatile long libPageGeneration;
 
     public void setLibrary(com.mineaudio.client.fabric.library.LocalLibraryService library) {
         this.library = library;
@@ -78,7 +82,45 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     /** 本地曲库结构性变化计数（供 MineUI 触发列表重排）。 */
     public long localGeneration() {
         com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
-        return lib == null ? 0L : lib.library().generation();
+        return (lib == null ? 0L : lib.library().generation()) + libPageGeneration;
+    }
+
+    /** 本地曲库标量状态：lib_count / lib_note / lib_page / lib_<slot>_<title|artist|time|present>。 */
+    private Object libraryState(String key) {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        if (key.equals("lib_count")) {
+            return lib == null ? 0 : lib.library().size();
+        }
+        if (key.equals("lib_note")) {
+            return lib == null ? "" : lib.library().note();
+        }
+        int total = lib == null ? 0 : lib.library().size();
+        int pages = Math.max(1, (total + LIB_PAGE_SIZE - 1) / LIB_PAGE_SIZE);
+        int page = Math.max(0, Math.min(libPage, pages - 1));
+        if (key.equals("lib_page")) {
+            return "第 " + (page + 1) + "/" + pages + " 页";
+        }
+        int first = key.indexOf('_', 4); // "lib_" 之后
+        if (first < 0) return null;
+        int slot;
+        try {
+            slot = Integer.parseInt(key.substring(4, first));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        String field = key.substring(first + 1);
+        com.mineaudio.client.library.LocalTrack track = lib == null ? null
+                : lib.library().track(page * LIB_PAGE_SIZE + slot);
+        if (field.equals("present")) {
+            return track != null ? "true" : "false";
+        }
+        if (track == null) return "";
+        return switch (field) {
+            case "title" -> track.title() == null ? "" : track.title();
+            case "artist" -> track.artist() == null ? "" : track.artist();
+            case "time" -> track.timeText();
+            default -> null;
+        };
     }
 
     /** 媒体防火墙：本地默认策略与服务端策略取交集。 */
@@ -274,11 +316,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             }
             return items;
         }
-        if (key.equals("lib_count")) {
-            return library == null ? 0 : library.library().size();
-        }
-        if (key.equals("lib_note")) {
-            return library == null ? "" : library.library().note();
+        if (key.startsWith("lib_")) {
+            return libraryState(key);
         }
         Session session = current;
         if (session == null) return null;
@@ -301,27 +340,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
     /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume / lib_*。 */
     public boolean localAction(String action, Map<String, Object> payload) {
-        switch (action) {
-            case "lib_refresh" -> {
-                if (library == null) return false;
-                library.scanAsync();
-                return true;
-            }
-            case "lib_play" -> {
-                return playLocalByIndex(indexOf(payload));
-            }
-            case "lib_delete" -> {
-                if (library == null) return false;
-                int index = indexOf(payload);
-                return index >= 0 && library.library().delete(index);
-            }
-            case "lib_queue" -> {
-                // 本地文件点歌到全服（上传+分发）属于 M2，占位不处理
-                return false;
-            }
-            default -> {
-                // 落到当前会话控制
-            }
+        if (action.startsWith("lib_")) {
+            return libraryAction(action, payload);
         }
         Session session = current;
         if (session == null) return false;
@@ -366,6 +386,64 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private static int indexOf(Map<String, Object> payload) {
         Object value = payload == null ? null : payload.get("index");
         return value instanceof Number number ? number.intValue() : -1;
+    }
+
+    /** 本地曲库动作：刷新 / 翻页 / 试听 / 点歌(M2占位) / 删除。 */
+    private boolean libraryAction(String action, Map<String, Object> payload) {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        switch (action) {
+            case "lib_refresh" -> {
+                if (lib == null) return false;
+                libPage = 0;
+                libPageGeneration++;
+                lib.scanAsync();
+                return true;
+            }
+            case "lib_page_prev" -> {
+                if (libPage > 0) {
+                    libPage--;
+                    libPageGeneration++;
+                }
+                return true;
+            }
+            case "lib_page_next" -> {
+                int total = lib == null ? 0 : lib.library().size();
+                int pages = Math.max(1, (total + LIB_PAGE_SIZE - 1) / LIB_PAGE_SIZE);
+                if (libPage < pages - 1) {
+                    libPage++;
+                    libPageGeneration++;
+                }
+                return true;
+            }
+            default -> {
+                // 继续解析 lib_<slot>_<action>
+            }
+        }
+        if (lib == null) return false;
+        int slot = slotOf(action);
+        if (slot >= 0) {
+            int absolute = libPage * LIB_PAGE_SIZE + slot;
+            if (action.startsWith("lib_play_")) return playLocalByIndex(absolute);
+            if (action.startsWith("lib_delete_")) return lib.library().delete(absolute);
+            if (action.startsWith("lib_queue_")) return false; // M2：上传分发
+        }
+        // 兼容带 payload index 的旧写法（list 版本）
+        if (action.equals("lib_play")) return playLocalByIndex(indexOf(payload));
+        if (action.equals("lib_delete")) {
+            int index = indexOf(payload);
+            return index >= 0 && lib.library().delete(index);
+        }
+        return false;
+    }
+
+    private static int slotOf(String action) {
+        int last = action.lastIndexOf('_');
+        if (last < 0 || last == action.length() - 1) return -1;
+        try {
+            return Integer.parseInt(action.substring(last + 1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /** 本地试听：只在本机播放玩家自有文件，不经过服务器。 */

@@ -861,30 +861,440 @@
                   "gap": 6,
                   "align": "center",
                   "children": [
-                    { "type": "text", "text": "本地曲库（客户端）", "color": "#C0C0C0", "scale": 0.9 },
-                    { "type": "text", "text": "{local.mineaudio.lib_count}", "color": "#00C8B4", "scale": 0.9 },
-                    { "type": "button", "skin": "vanilla:button", "text": "刷新", "action": "local:mineaudio.lib_refresh", "width": 40, "height": 16, "hoverScale": 1.08 },
-                    { "type": "text", "text": "{local.mineaudio.lib_note}", "color": "#909090", "scale": 0.75 }
+                    {
+                      "type": "text",
+                      "text": "本地曲库（客户端）",
+                      "color": "#C0C0C0",
+                      "scale": 0.9
+                    },
+                    {
+                      "type": "text",
+                      "text": "{local.mineaudio.lib_count}",
+                      "color": "#00C8B4",
+                      "scale": 0.9
+                    },
+                    {
+                      "type": "button",
+                      "skin": "vanilla:button",
+                      "text": "刷新",
+                      "action": "local:mineaudio.lib_refresh",
+                      "width": 40,
+                      "height": 16,
+                      "hoverScale": 1.08
+                    },
+                    {
+                      "type": "button",
+                      "skin": "vanilla:button",
+                      "text": "上一页",
+                      "action": "local:mineaudio.lib_page_prev",
+                      "width": 40,
+                      "height": 16,
+                      "hoverScale": 1.08
+                    },
+                    {
+                      "type": "text",
+                      "text": "{local.mineaudio.lib_page}",
+                      "color": "#C0C0C0",
+                      "scale": 0.8
+                    },
+                    {
+                      "type": "button",
+                      "skin": "vanilla:button",
+                      "text": "下一页",
+                      "action": "local:mineaudio.lib_page_next",
+                      "width": 40,
+                      "height": 16,
+                      "hoverScale": 1.08
+                    },
+                    {
+                      "type": "text",
+                      "text": "{local.mineaudio.lib_note}",
+                      "color": "#909090",
+                      "scale": 0.75
+                    }
                   ]
                 },
                 {
-                  "type": "list",
-                  "width": "100%",
-                  "height": 110,
-                  "gap": 3,
-                  "items": "{local.mineaudio.library}",
-                  "itemTemplate": {
-                    "type": "row",
-                    "gap": 6,
-                    "align": "center",
-                    "children": [
-                      { "type": "text", "text": "{item.title}", "color": "#FFFFFF", "scale": 0.85, "width": "46%" },
-                      { "type": "text", "text": "{item.artist}", "color": "#909090", "scale": 0.8, "width": "24%" },
-                      { "type": "text", "text": "{item.time}", "color": "#808080", "scale": 0.8, "width": "10%" },
-                      { "type": "button", "skin": "vanilla:button", "text": "试听", "action": "local:mineaudio.lib_play", "width": 40, "height": 15, "hoverScale": 1.08 },
-                      { "type": "button", "skin": "vanilla:button", "text": "点歌", "action": "local:mineaudio.lib_queue", "width": 40, "height": 15, "hoverScale": 1.08 }
-                    ]
-                  }
+                  "type": "column",
+                  "gap": 2,
+                  "children": [
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib0_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib0_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib0_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib0_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_0",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_0",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib1_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib1_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib1_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib1_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_1",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_1",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib2_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib2_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib2_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib2_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_2",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_2",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib3_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib3_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib3_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib3_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_3",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_3",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib4_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib4_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib4_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib4_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_4",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_4",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib5_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib5_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib5_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib5_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_5",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_5",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib6_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib6_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib6_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib6_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_6",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_6",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    },
+                    {
+                      "type": "row",
+                      "gap": 6,
+                      "align": "center",
+                      "visible": "{local.mineaudio.lib7_present}",
+                      "children": [
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib7_title}",
+                          "color": "#FFFFFF",
+                          "scale": 0.8,
+                          "width": "46%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib7_artist}",
+                          "color": "#909090",
+                          "scale": 0.75,
+                          "width": "24%"
+                        },
+                        {
+                          "type": "text",
+                          "text": "{local.mineaudio.lib7_time}",
+                          "color": "#808080",
+                          "scale": 0.75,
+                          "width": "10%"
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "试听",
+                          "action": "local:mineaudio.lib_play_7",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        },
+                        {
+                          "type": "button",
+                          "skin": "vanilla:button",
+                          "text": "点歌",
+                          "action": "local:mineaudio.lib_queue_7",
+                          "width": 40,
+                          "height": 15,
+                          "hoverScale": 1.08
+                        }
+                      ]
+                    }
+                  ]
                 }
               ]
             },
