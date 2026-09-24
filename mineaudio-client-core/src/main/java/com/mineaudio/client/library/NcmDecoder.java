@@ -106,45 +106,92 @@ public final class NcmDecoder {
                 + " gap=" + hex(gap, 2) + " keyHead=" + hex(keyRaw, 8) + "）");
     }
 
-    /** meta：XOR 0x63 与否两种变体都试，用 JSON 结构校验。 */
+    /** meta：先/后 XOR、去空白补 padding 多种变体都试，用 JSON 结构校验。 */
     private JsonObject readMeta(Cursor cursor) throws IOException {
         int metaLen = cursor.readIntLE();
         byte[] raw = cursor.read(metaLen);
-        String lastError = null;
-        for (boolean xor : new boolean[] {true, false}) {
-            try {
-                JsonObject meta = tryMeta(raw, xor);
-                if (meta != null) return meta;
-            } catch (Throwable t) {
-                lastError = t.getMessage();
-            }
+        for (boolean xorBefore : new boolean[] {true, false}) {
+            JsonObject meta = tryMeta(raw, xorBefore);
+            if (meta != null) return meta;
         }
-        throw new IOException("meta 解析失败（metaLen=" + metaLen + "）"
-                + (lastError == null ? "" : "：" + lastError));
+        byte[] xor = raw.clone();
+        for (int i = 0; i < xor.length; i++) xor[i] ^= 0x63;
+        throw new IOException("meta 解析失败（metaLen=" + metaLen
+                + " rawHead=" + hex(raw, 12) + " xorHead=" + hex(xor, 12) + "）");
     }
 
-    private JsonObject tryMeta(byte[] raw, boolean xor) throws IOException {
+    private JsonObject tryMeta(byte[] raw, boolean xorBefore) {
         byte[] text = raw.clone();
-        if (xor) {
+        if (xorBefore) {
             for (int i = 0; i < text.length; i++) text[i] ^= 0x63;
         }
-        byte[] decoded;
-        try {
-            decoded = Base64.getMimeDecoder().decode(text);
-        } catch (IllegalArgumentException e) {
-            return null;
+        byte[] decoded = lenientBase64(text);
+        if (decoded == null) return null;
+        for (boolean xorAfter : new boolean[] {false, true}) {
+            byte[] data = decoded.clone();
+            if (xorAfter) {
+                for (int i = 0; i < data.length; i++) data[i] ^= 0x63;
+            }
+            if (data.length == 0 || data.length % 16 != 0) continue;
+            try {
+                byte[] plain = aesDecrypt(data, META_KEY, "meta", "len=" + data.length);
+                JsonObject meta = parseMetaPlain(plain);
+                if (meta != null) return meta;
+            } catch (Throwable ignored) {
+                // 尝试下一个变体
+            }
         }
-        if (decoded.length == 0 || decoded.length % 16 != 0) return null;
-        byte[] plain = aesDecrypt(decoded, META_KEY, "meta", "len=" + decoded.length);
-        if (startsWith(plain, META_PREFIX)) {
-            plain = java.util.Arrays.copyOfRange(plain, META_PREFIX.length(), plain.length);
+        return null;
+    }
+
+    private static JsonObject parseMetaPlain(byte[] plain) {
+        if (!startsWith(plain, META_PREFIX)) {
+            byte[] bytes = plain;
+            // 常见前缀 "music:"；若不是则尝试从第一个 '{' 开始
+            int brace = indexOf(bytes, (byte) '{');
+            if (brace < 0) return null;
+            bytes = java.util.Arrays.copyOfRange(bytes, brace, bytes.length);
+            return parseJson(bytes);
         }
-        String json = new String(plain, StandardCharsets.UTF_8);
+        byte[] body = java.util.Arrays.copyOfRange(plain, META_PREFIX.length(), plain.length);
+        return parseJson(body);
+    }
+
+    private static JsonObject parseJson(byte[] bytes) {
+        String json = new String(bytes, StandardCharsets.UTF_8);
         int brace = json.indexOf('{');
         if (brace > 0) json = json.substring(brace);
         try {
             return JsonParser.parseString(json).getAsJsonObject();
         } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static int indexOf(byte[] data, byte value) {
+        for (int i = 0; i < data.length; i++) {
+            if (data[i] == value) return i;
+        }
+        return -1;
+    }
+
+    /** 宽松 base64：去掉非字母表字符并补齐 padding。 */
+    private static byte[] lenientBase64(byte[] data) {
+        StringBuilder sb = new StringBuilder(data.length);
+        for (byte b : data) {
+            int c = b & 0xFF;
+            if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+                    || c == '+' || c == '/' || c == '=') {
+                sb.append((char) c);
+            }
+        }
+        int length = sb.length();
+        if (length == 0) return null;
+        int pad = (4 - length % 4) % 4;
+        for (int i = 0; i < pad; i++) sb.append('=');
+        try {
+            return Base64.getDecoder().decode(sb.toString());
+        } catch (IllegalArgumentException e) {
             return null;
         }
     }
