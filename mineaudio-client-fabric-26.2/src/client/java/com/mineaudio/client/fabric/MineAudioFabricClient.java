@@ -20,9 +20,14 @@ public class MineAudioFabricClient implements ClientModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger("MineAudio");
 
     private static final ClientAudioManager AUDIO = new ClientAudioManager();
+    private static final com.mineaudio.client.fabric.library.LocalLibraryService LIBRARY =
+            new com.mineaudio.client.fabric.library.LocalLibraryService();
 
     @Override
     public void onInitializeClient() {
+        AUDIO.setLibrary(LIBRARY);
+        LIBRARY.init();
+
         PayloadTypeRegistry.serverboundPlay().register(MineAudioPayload.TYPE, MineAudioPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(MineAudioPayload.TYPE, MineAudioPayload.CODEC);
 

@@ -54,7 +54,9 @@ dependencies {
             'commons-io:commons-io:2.13.0',
             'org.jsoup:jsoup:1.16.1',
             'net.iharder:base64:2.3.9',
-            'org.json:json:20240303'
+            'org.json:json:20240303',
+            // 本地曲库：读取 MP3/FLAC/OGG/M4A 嵌入标签与封面（LGPL-3.0）
+            'net.jthink:jaudiotagger:3.0.1'
     ]
     embedded.each { dep ->
         implementation dep

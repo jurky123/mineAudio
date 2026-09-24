@@ -54,6 +54,8 @@ public final class LavaPlayerDecoder implements AudioDecoder {
                 .setConnectionRequestTimeout(30000)
                 .build());
         manager.registerSourceManager(http);
+        // 本地曲库：允许解码 file: 本地文件（不上传、不联网）
+        manager.registerSourceManager(new com.sedmelluq.discord.lavaplayer.source.local.LocalAudioSourceManager());
         return manager;
     }
 

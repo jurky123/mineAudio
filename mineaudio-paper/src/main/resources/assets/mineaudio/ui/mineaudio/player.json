@@ -854,6 +854,45 @@
               "gap": 3,
               "padding": 6,
               "radius": 6,
+              "background": "#2200C8B4",
+              "children": [
+                {
+                  "type": "row",
+                  "gap": 6,
+                  "align": "center",
+                  "children": [
+                    { "type": "text", "text": "本地曲库（客户端）", "color": "#C0C0C0", "scale": 0.9 },
+                    { "type": "text", "text": "{local.mineaudio.lib_count}", "color": "#00C8B4", "scale": 0.9 },
+                    { "type": "button", "skin": "vanilla:button", "text": "刷新", "action": "local:mineaudio.lib_refresh", "width": 40, "height": 16, "hoverScale": 1.08 },
+                    { "type": "text", "text": "{local.mineaudio.lib_note}", "color": "#909090", "scale": 0.75 }
+                  ]
+                },
+                {
+                  "type": "list",
+                  "width": "100%",
+                  "height": 110,
+                  "gap": 3,
+                  "items": "{local.mineaudio.library}",
+                  "itemTemplate": {
+                    "type": "row",
+                    "gap": 6,
+                    "align": "center",
+                    "children": [
+                      { "type": "text", "text": "{item.title}", "color": "#FFFFFF", "scale": 0.85, "width": "46%" },
+                      { "type": "text", "text": "{item.artist}", "color": "#909090", "scale": 0.8, "width": "24%" },
+                      { "type": "text", "text": "{item.time}", "color": "#808080", "scale": 0.8, "width": "10%" },
+                      { "type": "button", "skin": "vanilla:button", "text": "试听", "action": "local:mineaudio.lib_play", "width": 40, "height": 15, "hoverScale": 1.08 },
+                      { "type": "button", "skin": "vanilla:button", "text": "点歌", "action": "local:mineaudio.lib_queue", "width": 40, "height": 15, "hoverScale": 1.08 }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "type": "column",
+              "gap": 3,
+              "padding": 6,
+              "radius": 6,
               "background": "#22FFFFFF",
               "children": [
                 {

@@ -1,6 +1,7 @@
 package com.mineaudio.client.fabric;
 
 import com.mineaudio.client.fabric.audio.ClientAudioManager;
+import com.mineui.client.api.ClientStateProvider;
 import com.mineui.client.api.MineUiClientBridge;
 
 /**
@@ -15,7 +16,17 @@ final class MineAudioLocalBridge {
     static void register(ClientAudioManager audio) {
         MineUiClientBridge bridge = MineUiClientBridge.get();
         bridge.register("mineaudio",
-                audio::localState,
+                new ClientStateProvider() {
+                    @Override
+                    public Object get(String key) {
+                        return audio.localState(key);
+                    }
+
+                    @Override
+                    public long generation() {
+                        return audio.localGeneration();
+                    }
+                },
                 audio::localAction);
         // 业务能力位：服务端据此确认“MineAudio 本地控制”可用（local_state 只说明有本地提供者）
         bridge.declareCapability("mineaudio_local_v1");

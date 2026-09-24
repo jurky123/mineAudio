@@ -68,6 +68,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private MediaFirewall firewall;
     private SecureMediaGateway gateway;
     private boolean gatewayTried;
+    /** 客户端本地曲库（玩家自有文件，仅本地存储/播放）。 */
+    private volatile com.mineaudio.client.fabric.library.LocalLibraryService library;
+
+    public void setLibrary(com.mineaudio.client.fabric.library.LocalLibraryService library) {
+        this.library = library;
+    }
+
+    /** 本地曲库结构性变化计数（供 MineUI 触发列表重排）。 */
+    public long localGeneration() {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        return lib == null ? 0L : lib.library().generation();
+    }
 
     /** 媒体防火墙：本地默认策略与服务端策略取交集。 */
     private synchronized MediaFirewall firewall() {
@@ -243,8 +255,31 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
     // ---------- MineUI 本地状态 / 动作（{local.mineaudio.*} / local:mineaudio.*） ----------
 
-    /** 本地状态键：position / duration / percent / time / playing / buffering / volume / visible。 */
+    /** 本地状态键：position / duration / percent / time / playing / buffering / volume / visible / library。 */
     public Object localState(String key) {
+        // 本地曲库状态不依赖当前会话
+        if (key.equals("library")) {
+            java.util.List<java.util.Map<String, Object>> items = new java.util.ArrayList<>();
+            com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+            if (lib != null) {
+                int index = 0;
+                for (com.mineaudio.client.library.LocalTrack track : lib.library().tracks()) {
+                    java.util.Map<String, Object> item = new java.util.LinkedHashMap<>();
+                    item.put("index", index++);
+                    item.put("title", track.title() == null ? "" : track.title());
+                    item.put("artist", track.artist() == null ? "" : track.artist());
+                    item.put("time", track.timeText());
+                    items.add(item);
+                }
+            }
+            return items;
+        }
+        if (key.equals("lib_count")) {
+            return library == null ? 0 : library.library().size();
+        }
+        if (key.equals("lib_note")) {
+            return library == null ? "" : library.library().note();
+        }
         Session session = current;
         if (session == null) return null;
         long duration = session.knownDurationMs();
@@ -264,8 +299,30 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         };
     }
 
-    /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume。 */
+    /** 本地动作：pause / resume / seek / seek_back / seek_fwd / volume / lib_*。 */
     public boolean localAction(String action, Map<String, Object> payload) {
+        switch (action) {
+            case "lib_refresh" -> {
+                if (library == null) return false;
+                library.scanAsync();
+                return true;
+            }
+            case "lib_play" -> {
+                return playLocalByIndex(indexOf(payload));
+            }
+            case "lib_delete" -> {
+                if (library == null) return false;
+                int index = indexOf(payload);
+                return index >= 0 && library.library().delete(index);
+            }
+            case "lib_queue" -> {
+                // 本地文件点歌到全服（上传+分发）属于 M2，占位不处理
+                return false;
+            }
+            default -> {
+                // 落到当前会话控制
+            }
+        }
         Session session = current;
         if (session == null) return false;
         long duration = session.knownDurationMs();
@@ -306,6 +363,43 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
     }
 
+    private static int indexOf(Map<String, Object> payload) {
+        Object value = payload == null ? null : payload.get("index");
+        return value instanceof Number number ? number.intValue() : -1;
+    }
+
+    /** 本地试听：只在本机播放玩家自有文件，不经过服务器。 */
+    private boolean playLocalByIndex(int index) {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        if (lib == null) return false;
+        com.mineaudio.client.library.LocalTrack track = lib.library().track(index);
+        if (track == null) return false;
+        playLocalPreview(track);
+        return true;
+    }
+
+    private void playLocalPreview(com.mineaudio.client.library.LocalTrack track) {
+        String sessionId = "local:" + track.id();
+        Session existing = sessions.get(sessionId);
+        if (existing != null) existing.stop();
+        // 不变量：至多一条 MUSIC，进入本地试听先停其它 MUSIC
+        for (Session other : List.copyOf(sessions.values())) {
+            if (other != existing && "MUSIC".equalsIgnoreCase(other.bus)) {
+                sessions.remove(other.id);
+                other.stop();
+            }
+        }
+        Packets.Play play = new Packets.Play(
+                "local:" + track.id(), "local", track.id(),
+                track.file().toAbsolutePath().toString(),
+                Map.of(), 0, 0, 0, 0, 1f, "MUSIC", 0, track.durationMs(),
+                track.title(), track.artist(), null, null);
+        Session session = new Session(sessionId, play, true);
+        sessions.put(sessionId, session);
+        current = session;
+        session.start();
+    }
+
     private static String formatTime(long ms) {
         long totalSeconds = Math.max(0, ms) / 1000;
         return String.format("%d:%02d", totalSeconds / 60, totalSeconds % 60);
@@ -324,6 +418,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final long durationHintMs;
         private final String coverUrl;
         private final Packets.Play.Spatial spatial;
+        /** 本地文件试听：不校验/不经过媒体网关，不向服务端上报状态。 */
+        private final boolean local;
         /** 媒体内容标识（不含会话身份），跨会话复用缓存。 */
         private final String cacheKey;
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
@@ -367,7 +463,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final long createdAtMs = System.currentTimeMillis();
 
         Session(String sessionId, Packets.Play play) {
+            this(sessionId, play, false);
+        }
+
+        Session(String sessionId, Packets.Play play, boolean localOnly) {
             this.id = sessionId;
+            this.local = localOnly;
             this.revision = play.resourceVersion();
             this.url = play.url();
             this.cacheKey = buildCacheKey(play);
@@ -393,6 +494,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** 校验 URL 并注册到本机网关（含缓存），解码器只访问 127.0.0.1。 */
         private void prepare() {
             String playUrl = url;
+            if (local) {
+                // 本地文件直接交给解码器（file: 由 LavaPlayer LocalAudioSourceManager 处理）
+                decoder.start(playUrl, startPositionMs, this);
+                return;
+            }
             try {
                 URI uri = URI.create(url);
                 firewall().validate(uri);
@@ -765,6 +871,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
 
         private void report() {
             if (closed) return;
+            if (local) return; // 本地试听不上报服务端
             // 状态只由播放时钟决定（DRAINING 映射为 PLAYING）；
             // 有暂停意图的 LOADING/BUFFERING 对外展示 PAUSED
             String state = clock.stateName();

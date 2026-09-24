@@ -39,6 +39,10 @@
 '> 2026-09-20 追加：统一播放语义——点歌/曲库“点歌”进全服队列并按共享时间轴全服播放；搜索“自己”/曲库“自己”
 '> 为 PERSONAL 临时覆盖，结束/停止后自动回到全服进度；停止按钮区分（自己中→只停自己回全服，全服中→停全服清队列）；
 '> 全服曲目被自己遮挡期间越过时长则切下一首（0.3.2）。
+'> 2026-09-24 追加：客户端本地曲库 M1（0.4.0）——固定目录 `config/mineaudio/library/` 扫描，
+'> jaudiotagger 解析标题/歌手/专辑/时长与嵌入封面（导出 .covers），按大小+修改时间缓存索引、按 sha256 去重，
+'> MineUI 本地绑定 `{local.mineaudio.library}` + `local:mineaudio.lib_play/lib_refresh/lib_delete` 本地试听；
+'> 点歌到全服的文件上传/分发为 M2（服务器临时缓存托管）。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
