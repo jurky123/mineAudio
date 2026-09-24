@@ -22,7 +22,8 @@ final class NcmFixtures {
 
         byte[] metaBlob = aesEncrypt(concat("music:".getBytes(StandardCharsets.US_ASCII),
                 metaJson.getBytes(StandardCharsets.UTF_8)), META_KEY);
-        metaBlob = Base64.getEncoder().encode(metaBlob);
+        metaBlob = concat("163 key(Don't modify it):".getBytes(StandardCharsets.US_ASCII),
+                Base64.getEncoder().encode(metaBlob));
         for (int i = 0; i < metaBlob.length; i++) metaBlob[i] ^= 0x63;
 
         byte[] keyBox = buildKeyBox(KEY);

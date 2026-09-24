@@ -125,7 +125,9 @@ public final class NcmDecoder {
         if (xorBefore) {
             for (int i = 0; i < text.length; i++) text[i] ^= 0x63;
         }
-        byte[] decoded = lenientBase64(text);
+        // 去掉 "163 key(Don't modify it):" 之类的头部，只取 ':' 之后的 base64
+        byte[] payload = sliceAfterColon(text);
+        byte[] decoded = lenientBase64(payload);
         if (decoded == null) return null;
         for (boolean xorAfter : new boolean[] {false, true}) {
             byte[] data = decoded.clone();
@@ -142,6 +144,17 @@ public final class NcmDecoder {
             }
         }
         return null;
+    }
+
+    /** 取前 64 字节内首个 ':' 之后的字节（NCM meta 前缀为 {@code 163 key(Don't modify it):}）。 */
+    private static byte[] sliceAfterColon(byte[] data) {
+        int limit = Math.min(data.length, 64);
+        for (int i = 0; i < limit; i++) {
+            if (data[i] == ':') {
+                return java.util.Arrays.copyOfRange(data, i + 1, data.length);
+            }
+        }
+        return data;
     }
 
     private static JsonObject parseMetaPlain(byte[] plain) {
