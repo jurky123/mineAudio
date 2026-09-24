@@ -174,11 +174,32 @@ public final class LocalLibrary {
             if (NcmDecoder.isNcm(file) && ncm != null) {
                 NcmDecoder.Decoded decoded = ncm.decode(file, decodedDir);
                 String id = sha256(decoded.audio());
-                String cover = writeCover(id, decoded.cover(), decoded.coverExt(),
+                long duration = decoded.durationMs();
+                String title = decoded.title();
+                String artist = decoded.artist();
+                String album = decoded.album();
+                byte[] coverBytes = decoded.cover();
+                String coverExt = decoded.coverExt();
+                // NCM 元数据缺失时，用 jaudiotagger 从解出的音频补全
+                if (probe != null && (!notBlank(title) || duration <= 0
+                        || coverBytes == null || coverBytes.length == 0)) {
+                    TrackMeta meta = probe.probe(decoded.audio());
+                    if (meta != null) {
+                        if (!notBlank(title)) title = meta.title();
+                        if (!notBlank(artist)) artist = meta.artist();
+                        if (!notBlank(album)) album = meta.album();
+                        if (duration <= 0) duration = meta.durationMs();
+                        if ((coverBytes == null || coverBytes.length == 0) && meta.cover() != null) {
+                            coverBytes = meta.cover();
+                            coverExt = meta.coverExt();
+                        }
+                    }
+                }
+                String cover = writeCover(id, coverBytes, coverExt,
                         previous != null ? previous.coverFile() : null);
-                String title = notBlank(decoded.title()) ? decoded.title() : stem(file);
-                return new LocalTrack(id, file, decoded.audio(), size, mtime, decoded.durationMs(),
-                        title, nullToEmpty(decoded.artist()), nullToEmpty(decoded.album()), cover, lyrics);
+                return new LocalTrack(id, file, decoded.audio(), size, mtime, duration,
+                        notBlank(title) ? title : stem(file),
+                        nullToEmpty(artist), nullToEmpty(album), cover, lyrics);
             }
 
             String id = sha256(file);

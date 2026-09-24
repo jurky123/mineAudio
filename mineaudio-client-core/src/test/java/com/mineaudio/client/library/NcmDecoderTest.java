@@ -39,4 +39,22 @@ class NcmDecoderTest {
         assertEquals("jpg", decoded.coverExt());
         assertTrue(decoded.audio().getFileName().toString().endsWith(".mp3"));
     }
+
+    @Test
+    void metaFailureDoesNotAbortAudio(@TempDir Path dir) throws Exception {
+        byte[] audio = "MP3AUDIO".getBytes(StandardCharsets.US_ASCII);
+        byte[] cover = new byte[] {(byte) 0xFF, (byte) 0xD8};
+        // 构造一个无法解析的 meta 段（随机字节）
+        byte[] badMeta = new byte[32];
+        for (int i = 0; i < badMeta.length; i++) badMeta[i] = (byte) (i * 7 + 3);
+        Path ncm = dir.resolve("bad.ncm");
+        Files.write(ncm, NcmFixtures.buildNcmRawMeta(badMeta, cover, audio));
+
+        NcmDecoder.Decoded decoded = new NcmDecoder().decode(ncm, dir.resolve(".decoded"));
+
+        assertNotNull(decoded.audio());
+        assertArrayEquals(audio, Files.readAllBytes(decoded.audio()));
+        // 格式从音频帧头推断（此处为 ASCII，兜底 mp3）
+        assertTrue(decoded.audio().getFileName().toString().endsWith(".mp3"));
+    }
 }

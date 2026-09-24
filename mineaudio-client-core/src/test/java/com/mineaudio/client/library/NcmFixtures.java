@@ -17,14 +17,22 @@ final class NcmFixtures {
     }
 
     static byte[] buildNcm(String metaJson, byte[] cover, byte[] audio) throws Exception {
-        byte[] keyBlob = aesEncrypt(concat("neteasecloudmusic".getBytes(StandardCharsets.US_ASCII), KEY), META_KEY);
-        for (int i = 0; i < keyBlob.length; i++) keyBlob[i] ^= 0x64;
-
         byte[] metaBlob = aesEncrypt(concat("music:".getBytes(StandardCharsets.US_ASCII),
                 metaJson.getBytes(StandardCharsets.UTF_8)), META_KEY);
         metaBlob = concat("163 key(Don't modify it):".getBytes(StandardCharsets.US_ASCII),
                 Base64.getEncoder().encode(metaBlob));
         for (int i = 0; i < metaBlob.length; i++) metaBlob[i] ^= 0x63;
+        return assemble(metaBlob, cover, audio);
+    }
+
+    /** 直接用给定的（已存储形态的）meta 段构造 .ncm，用于测试 meta 解析失败时的容错。 */
+    static byte[] buildNcmRawMeta(byte[] storedMeta, byte[] cover, byte[] audio) throws Exception {
+        return assemble(storedMeta, cover, audio);
+    }
+
+    private static byte[] assemble(byte[] storedMeta, byte[] cover, byte[] audio) throws Exception {
+        byte[] keyBlob = aesEncrypt(concat("neteasecloudmusic".getBytes(StandardCharsets.US_ASCII), KEY), META_KEY);
+        for (int i = 0; i < keyBlob.length; i++) keyBlob[i] ^= 0x64;
 
         byte[] keyBox = buildKeyBox(KEY);
         byte[] encAudio = audio.clone();
@@ -35,8 +43,8 @@ final class NcmFixtures {
         out.write(new byte[2]);
         writeInt(out, keyBlob.length);
         out.write(keyBlob);
-        writeInt(out, metaBlob.length);
-        out.write(metaBlob);
+        writeInt(out, storedMeta.length);
+        out.write(storedMeta);
         writeInt(out, 0);
         out.write(new byte[5]);
         writeInt(out, cover.length);

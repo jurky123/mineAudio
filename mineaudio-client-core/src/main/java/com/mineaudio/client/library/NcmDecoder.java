@@ -56,7 +56,11 @@ public final class NcmDecoder {
         byte[] keyRaw = cursor.read(keyLen);
         byte[] keyBox = deriveKeyBox(keyRaw, keyLen, gap);
 
-        JsonObject meta = readMeta(cursor);
+        // meta 可能因版本差异解析失败：不作为致命错误（音频仍可解，元数据交给 jaudiotagger 兜底）
+        int metaLen = cursor.readIntLE();
+        byte[] metaRaw = cursor.read(metaLen);
+        JsonObject meta = readMetaBytes(metaRaw);
+
         cursor.skip(4); // crc
         cursor.skip(5); // gap
         int imageSize = cursor.readIntLE();
@@ -64,8 +68,10 @@ public final class NcmDecoder {
         byte[] audio = cursor.read(cursor.remaining());
         decryptAudio(audio, keyBox);
 
-        String format = meta != null && meta.has("format") ? meta.get("format").getAsString() : "mp3";
-        String ext = format == null || format.isBlank() ? "mp3" : format.toLowerCase(java.util.Locale.ROOT);
+        String ext = meta != null && meta.has("format") && !meta.get("format").isJsonNull()
+                ? meta.get("format").getAsString().toLowerCase(java.util.Locale.ROOT)
+                : detectFormat(audio);
+        if (ext == null || ext.isBlank()) ext = detectFormat(audio);
         Files.createDirectories(outDir);
         Path out = outDir.resolve(LocalLibrary.sha256(source) + "." + ext);
         if (!Files.isRegularFile(out) || Files.size(out) != audio.length) {
@@ -77,6 +83,19 @@ public final class NcmDecoder {
         String artist = optArtist(meta);
         String album = optString(meta, "album");
         return new Decoded(out, duration, title, artist, album, cover, coverExt(cover));
+    }
+
+    /** 从音频帧头推断格式（meta 不可用时的兜底）。 */
+    private static String detectFormat(byte[] audio) {
+        if (audio.length >= 12) {
+            if (audio[0] == 'f' && audio[1] == 'L' && audio[2] == 'a' && audio[3] == 'C') return "flac";
+            if (audio[0] == 'O' && audio[1] == 'g' && audio[2] == 'g' && audio[3] == 'S') return "ogg";
+            if (audio[0] == 'R' && audio[1] == 'I' && audio[2] == 'F' && audio[3] == 'F') return "wav";
+            if (audio[4] == 'f' && audio[5] == 't' && audio[6] == 'y' && audio[7] == 'p') return "m4a";
+        }
+        if (audio.length >= 3 && audio[0] == 'I' && audio[1] == 'D' && audio[2] == '3') return "mp3";
+        if (audio.length >= 2 && (audio[0] & 0xFF) == 0xFF && (audio[1] & 0xE0) == 0xE0) return "mp3";
+        return "mp3";
     }
 
     /** 从 key 段派生 keyBox：XOR 0x64 与否两种变体都试，用 "neteasecloudmusic" 前缀校验。 */
@@ -106,18 +125,13 @@ public final class NcmDecoder {
                 + " gap=" + hex(gap, 2) + " keyHead=" + hex(keyRaw, 8) + "）");
     }
 
-    /** meta：先/后 XOR、去空白补 padding 多种变体都试，用 JSON 结构校验。 */
-    private JsonObject readMeta(Cursor cursor) throws IOException {
-        int metaLen = cursor.readIntLE();
-        byte[] raw = cursor.read(metaLen);
+    /** meta 解析（容错）：失败返回 null，不中断音频解密。 */
+    private JsonObject readMetaBytes(byte[] raw) {
         for (boolean xorBefore : new boolean[] {true, false}) {
             JsonObject meta = tryMeta(raw, xorBefore);
             if (meta != null) return meta;
         }
-        byte[] xor = raw.clone();
-        for (int i = 0; i < xor.length; i++) xor[i] ^= 0x63;
-        throw new IOException("meta 解析失败（metaLen=" + metaLen
-                + " rawHead=" + hex(raw, 12) + " xorHead=" + hex(xor, 12) + "）");
+        return null;
     }
 
     private JsonObject tryMeta(byte[] raw, boolean xorBefore) {
@@ -125,25 +139,34 @@ public final class NcmDecoder {
         if (xorBefore) {
             for (int i = 0; i < text.length; i++) text[i] ^= 0x63;
         }
-        // 去掉 "163 key(Don't modify it):" 之类的头部，只取 ':' 之后的 base64
+        // 去掉 "163 key(Don't modify it):" 之类的头部，只取 ':' 之后的载荷
         byte[] payload = sliceAfterColon(text);
-        byte[] decoded = lenientBase64(payload);
-        if (decoded == null) return null;
-        for (boolean xorAfter : new boolean[] {false, true}) {
-            byte[] data = decoded.clone();
-            if (xorAfter) {
-                for (int i = 0; i < data.length; i++) data[i] ^= 0x63;
-            }
-            if (data.length == 0 || data.length % 16 != 0) continue;
-            try {
-                byte[] plain = aesDecrypt(data, META_KEY, "meta", "len=" + data.length);
-                JsonObject meta = parseMetaPlain(plain);
-                if (meta != null) return meta;
-            } catch (Throwable ignored) {
-                // 尝试下一个变体
+        for (byte[] data0 : candidates(payload)) {
+            for (boolean xorAfter : new boolean[] {false, true}) {
+                byte[] data = data0.clone();
+                if (xorAfter) {
+                    for (int i = 0; i < data.length; i++) data[i] ^= 0x63;
+                }
+                if (data.length == 0 || data.length % 16 != 0) continue;
+                try {
+                    byte[] plain = aesDecrypt(data, META_KEY, "meta", "len=" + data.length);
+                    JsonObject meta = parseMetaPlain(plain);
+                    if (meta != null) return meta;
+                } catch (Throwable ignored) {
+                    // 尝试下一个变体
+                }
             }
         }
         return null;
+    }
+
+    /** meta 载荷候选：base64 解码结果 与 原样二进制。 */
+    private static java.util.List<byte[]> candidates(byte[] payload) {
+        java.util.List<byte[]> list = new java.util.ArrayList<>(2);
+        byte[] decoded = lenientBase64(payload);
+        if (decoded != null && decoded.length > 0) list.add(decoded);
+        list.add(payload);
+        return list;
     }
 
     /** 取前 64 字节内首个 ':' 之后的字节（NCM meta 前缀为 {@code 163 key(Don't modify it):}）。 */
@@ -155,6 +178,15 @@ public final class NcmDecoder {
             }
         }
         return data;
+    }
+
+    private static String printable(byte[] data, int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(count, data.length); i++) {
+            int c = data[i] & 0xFF;
+            sb.append(c >= 0x20 && c < 0x7F ? (char) c : '.');
+        }
+        return sb.toString();
     }
 
     private static JsonObject parseMetaPlain(byte[] plain) {
