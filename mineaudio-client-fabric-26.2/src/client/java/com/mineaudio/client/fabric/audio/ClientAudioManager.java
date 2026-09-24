@@ -100,15 +100,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (key.equals("lib_page")) {
             return "第 " + (page + 1) + "/" + pages + " 页";
         }
-        int first = key.indexOf('_', 4); // "lib_" 之后
-        if (first < 0) return null;
+        // 支持 lib0_title 与 lib_0_title 两种写法
+        String rest = key.substring(3);
+        if (rest.startsWith("_")) rest = rest.substring(1);
+        int us = rest.indexOf('_');
+        if (us <= 0) return null;
         int slot;
         try {
-            slot = Integer.parseInt(key.substring(4, first));
+            slot = Integer.parseInt(rest.substring(0, us));
         } catch (NumberFormatException e) {
             return null;
         }
-        String field = key.substring(first + 1);
+        String field = rest.substring(us + 1);
         com.mineaudio.client.library.LocalTrack track = lib == null ? null
                 : lib.library().track(page * LIB_PAGE_SIZE + slot);
         if (field.equals("present")) {
@@ -316,7 +319,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             }
             return items;
         }
-        if (key.startsWith("lib_")) {
+        if (key.startsWith("lib")) {
             return libraryState(key);
         }
         Session session = current;

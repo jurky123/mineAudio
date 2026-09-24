@@ -38,7 +38,10 @@ public final class LocalLibrary {
     private final Path indexFile;
     private final MetadataProbe probe;
     private final NcmDecoder ncm;
-    private final List<LocalTrack> tracks = new ArrayList<>();
+    /** 不可变快照：渲染线程无锁读取，扫描完成后整体替换。 */
+    private volatile List<LocalTrack> tracks = List.of();
+    private final java.util.concurrent.atomic.AtomicBoolean scanning =
+            new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long generation;
     private volatile String note = "尚未扫描";
     private volatile String lastFailure;
@@ -60,24 +63,25 @@ public final class LocalLibrary {
         return dir;
     }
 
-    /** 曲库快照（不可变）。 */
-    public synchronized List<LocalTrack> tracks() {
-        return List.copyOf(tracks);
+    /** 曲库快照（不可变，无锁）。 */
+    public List<LocalTrack> tracks() {
+        return tracks;
     }
 
-    public synchronized int size() {
+    public int size() {
         return tracks.size();
     }
 
-    public synchronized LocalTrack track(int index) {
-        return index >= 0 && index < tracks.size() ? tracks.get(index) : null;
+    public LocalTrack track(int index) {
+        List<LocalTrack> snapshot = tracks;
+        return index >= 0 && index < snapshot.size() ? snapshot.get(index) : null;
     }
 
-    public synchronized Path coverPath(LocalTrack track) {
+    public Path coverPath(LocalTrack track) {
         return track.coverFile() == null ? null : dir.resolve(track.coverFile());
     }
 
-    public synchronized Path lyricsPath(LocalTrack track) {
+    public Path lyricsPath(LocalTrack track) {
         return track.lyricsFile() == null ? null : dir.resolve(track.lyricsFile());
     }
 
@@ -90,8 +94,11 @@ public final class LocalLibrary {
         return note;
     }
 
-    /** 扫描目录并重建索引（阻塞；调用方应放到后台线程）。未变化的文件复用缓存。 */
-    public synchronized void scan() {
+    /** 扫描目录并重建索引（阻塞；调用方应放到后台线程）。未变化的文件复用索引缓存，不重复解析。 */
+    public void scan() {
+        if (!scanning.compareAndSet(false, true)) {
+            return; // 已有扫描进行中
+        }
         try {
             Files.createDirectories(dir);
             Files.createDirectories(coversDir);
@@ -119,9 +126,8 @@ public final class LocalLibrary {
             result.sort(Comparator
                     .comparing((LocalTrack t) -> t.title() == null ? "" : t.title(), String.CASE_INSENSITIVE_ORDER)
                     .thenComparing(t -> t.file().getFileName().toString(), String.CASE_INSENSITIVE_ORDER));
-            tracks.clear();
-            tracks.addAll(result);
             saveIndex(result);
+            tracks = List.copyOf(result); // 原子替换快照
             if (result.isEmpty() && failures == 0) {
                 note = "本地曲库为空：把音频文件放进 " + dir + " 后点“刷新”";
             } else if (failures > 0) {
@@ -133,14 +139,17 @@ public final class LocalLibrary {
         } catch (Throwable t) {
             note = "扫描失败：" + t;
         } finally {
+            scanning.set(false);
             generation++;
         }
     }
 
     /** 删除某首（删除源文件、解密缓存与封面）。返回是否成功。 */
-    public synchronized boolean delete(int index) {
-        if (index < 0 || index >= tracks.size()) return false;
-        LocalTrack track = tracks.remove(index);
+    public boolean delete(int index) {
+        List<LocalTrack> snapshot = tracks;
+        if (index < 0 || index >= snapshot.size()) return false;
+        List<LocalTrack> result = new ArrayList<>(snapshot);
+        LocalTrack track = result.remove(index);
         try {
             Files.deleteIfExists(track.file());
             if (!track.playableFile().equals(track.file())) {
@@ -151,7 +160,8 @@ public final class LocalLibrary {
         } catch (IOException ignored) {
             // 文件占用/权限问题：索引已移除，文件残留不致命
         }
-        saveIndex(tracks);
+        saveIndex(result);
+        tracks = List.copyOf(result);
         note = "已删除：" + track.title();
         generation++;
         return true;
