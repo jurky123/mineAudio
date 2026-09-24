@@ -850,6 +850,31 @@
           "visible": "{state.tab_lib}",
           "children": [
             {
+              "type": "row",
+              "gap": 6,
+              "align": "center",
+              "children": [
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "本地曲库",
+                  "action": "tab_lib_local",
+                  "width": 56,
+                  "height": 16,
+                  "hoverScale": 1.08
+                },
+                {
+                  "type": "button",
+                  "skin": "vanilla:button",
+                  "text": "远程曲库",
+                  "action": "tab_lib_remote",
+                  "width": 56,
+                  "height": 16,
+                  "hoverScale": 1.08
+                }
+              ]
+            },
+            {
               "type": "column",
               "gap": 3,
               "padding": 6,
@@ -1296,7 +1321,8 @@
                     }
                   ]
                 }
-              ]
+              ],
+              "visible": "{state.lib_local}"
             },
             {
               "type": "column",
@@ -1593,7 +1619,8 @@
                     }
                   ]
                 }
-              ]
+              ],
+              "visible": "{state.lib_remote}"
             },
             {
               "type": "column",
@@ -1650,7 +1677,8 @@
                     }
                   ]
                 }
-              ]
+              ],
+              "visible": "{state.lib_remote}"
             }
           ]
         },
