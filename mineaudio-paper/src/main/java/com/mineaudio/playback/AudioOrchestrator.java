@@ -65,8 +65,10 @@ public final class AudioOrchestrator implements MineAudio {
     private final PlayerStreamStatus streamStatus;
     private final Map<UUID, PlayerAudioState> states = new HashMap<>();
     private final Map<UUID, ActiveSession> activeSessions = new LinkedHashMap<>();
-    /** 点歌队列（每人一个，天然按玩家隔离）。 */
-    private final Map<UUID, Deque<AudioTrack>> playQueues = new HashMap<>();
+    /** 全服点歌队列：点歌即入队，按全服统一进度播放。 */
+    private final Deque<AudioTrack> globalQueue = new ArrayDeque<>();
+    /** 当前全服播放会话（点歌队列队首）；null 表示空闲。 */
+    private ActiveSession globalSession;
     /** 播放来源比较序号（同层后到者胜）；只增不减。 */
     private final AtomicLong sequence = new AtomicLong();
     /** 玩家最近一次搜索（关键词/页码/结果，UI 与命令共用）。 */
@@ -109,6 +111,11 @@ public final class AudioOrchestrator implements MineAudio {
             return NoopPlaybackHandle.stopped();
         }
         PlaybackOptions options = override != null ? override : track.options();
+        return startAudience(audience, track, options);
+    }
+
+    /** 启动一次逻辑受众会话（不做 MUSIC 唯一性仲裁，仲裁在各玩家 reconcileMusic 内）。 */
+    private ActiveSession startAudience(Audience audience, AudioTrack track, PlaybackOptions options) {
         long leadMs = Math.max(0, plugin.getConfig().getLong("stream-client.sync.initial-lead-ms", 1200));
         ActiveSession session = new ActiveSession(track, options, audience,
                 new Timeline(System.nanoTime() / 1_000_000 + leadMs, 0), sequence.incrementAndGet());
@@ -190,7 +197,6 @@ public final class AudioOrchestrator implements MineAudio {
     @Override
     public void stopAll(Audience audience) {
         for (Player player : audience.players()) {
-            playQueues.remove(player.getUniqueId());
             searchQueries.remove(player.getUniqueId());
             PlayerAudioState state = states.remove(player.getUniqueId());
             if (state == null) continue;
@@ -336,33 +342,27 @@ public final class AudioOrchestrator implements MineAudio {
     }
 
     public EnqueueResult enqueue(Player player, AudioTrack track) {
-        Deque<AudioTrack> queue = playQueues.computeIfAbsent(player.getUniqueId(),
-                ignored -> new ArrayDeque<>());
-        if (queue.size() >= queueLimit()) {
+        if (globalQueue.size() >= queueLimit()) {
             return EnqueueResult.FULL;
         }
-        queue.addLast(track);
-        // 没有个人音乐在播时立即起播（抢占全服/区域）；已有则等自然结束续播
-        PlayerAudioState state = states.get(player.getUniqueId());
-        if (state == null || !state.musicArbiter().has(PERSONAL_SOURCE)) {
-            advanceQueueIntent(player);
-            reconcileMusic(player);
+        globalQueue.addLast(track);
+        debug(player.getName() + " 点歌入队：" + track.id().asString());
+        if (globalSession == null) {
+            startNextGlobal();
         }
         return EnqueueResult.ADDED;
     }
 
     public List<AudioTrack> queue(Player player) {
-        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
-        return queue == null ? List.of() : List.copyOf(queue);
+        return List.copyOf(globalQueue);
     }
 
     public boolean removeFromQueue(Player player, int index) {
-        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
-        if (queue == null || index < 0 || index >= queue.size()) {
+        if (index < 0 || index >= globalQueue.size()) {
             return false;
         }
         int current = 0;
-        var iterator = queue.iterator();
+        var iterator = globalQueue.iterator();
         while (iterator.hasNext()) {
             iterator.next();
             if (current++ == index) {
@@ -374,7 +374,7 @@ public final class AudioOrchestrator implements MineAudio {
     }
 
     public void clearQueue(Player player) {
-        playQueues.remove(player.getUniqueId());
+        globalQueue.clear();
     }
 
     public void setSearchQuery(Player player, String keyword, int page, List<SearchResult> results) {
@@ -404,8 +404,8 @@ public final class AudioOrchestrator implements MineAudio {
                 new AudioMetadata(result.title(), result.artist(), result.durationMs()));
     }
 
-    /** 立即播放（不排队），用于搜索结果的“播放”按钮：作为个人点播抢占其他来源。 */
-    public PlaybackSession playNow(Player player, AudioTrack track) {
+    /** “自己”：临时只给该玩家播放，抢占全服；结束或停止后自动回到全服当前进度。 */
+    public PlaybackSession playSelf(Player player, AudioTrack track) {
         upsertMusicIntent(player, personalIntent(track, track.options()));
         reconcileMusic(player);
         PlayerAudioState state = states.get(player.getUniqueId());
@@ -416,18 +416,61 @@ public final class AudioOrchestrator implements MineAudio {
         return state.playingMusic();
     }
 
-    /** 队列推进：只更新 intent，不 reconcile；调用方随后只 reconcile 一次（A→B 不经过其他来源）。 */
-    private void advanceQueueIntent(Player player) {
-        Deque<AudioTrack> queue = playQueues.get(player.getUniqueId());
+    /** 兼容旧调用：等价于“自己”临时播放。 */
+    public PlaybackSession playNow(Player player, AudioTrack track) {
+        return playSelf(player, track);
+    }
+
+    /** 停止：个人临时播放中 → 只停自己并回到全服；否则停全服（并清空点歌队列）。 */
+    public void stopFor(Player player) {
         PlayerAudioState state = states.get(player.getUniqueId());
-        if (state == null) return;
-        if (queue == null || queue.isEmpty() || plugin.isShuttingDown()) {
+        if (state != null && state.musicArbiter().has(PERSONAL_SOURCE)) {
             state.musicArbiter().remove(PERSONAL_SOURCE);
+            reconcileMusic(player);
             return;
         }
-        AudioTrack next = queue.pollFirst();
-        state.musicArbiter().upsert(personalIntent(next, next.options()));
-        debug("队列续播：" + player.getName() + " -> " + next.id().asString());
+        stopGlobal();
+    }
+
+    /** 播放全服队列下一首（空闲时）。 */
+    private void startNextGlobal() {
+        if (globalSession != null || plugin.isShuttingDown()) return;
+        AudioTrack next = globalQueue.pollFirst();
+        if (next == null) return;
+        globalSession = startAudience(Audience.global(), next, next.options());
+        debug("全服续播：" + next.id().asString());
+    }
+
+    /** 全服会话自然结束：回收受众占位并续播下一首。 */
+    private void endGlobalSession(ActiveSession session) {
+        if (globalSession != session) return;
+        globalSession = null;
+        session.stop();
+        startNextGlobal();
+    }
+
+    private void stopGlobal() {
+        ActiveSession session = globalSession;
+        globalSession = null;
+        globalQueue.clear();
+        if (session != null) {
+            session.stop();
+        } else {
+            // 无全服会话：清掉所有受众 intent
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                PlayerAudioState state = states.get(player.getUniqueId());
+                if (state == null) continue;
+                List<String> sources = new ArrayList<>();
+                for (MusicIntent intent : state.musicArbiter().intents()) {
+                    if (intent.layer() == MusicLayer.AUDIENCE) sources.add(intent.sourceId());
+                }
+                if (sources.isEmpty()) continue;
+                for (String source : sources) {
+                    state.musicArbiter().remove(source);
+                }
+                reconcileMusic(player);
+            }
+        }
     }
 
     // ---------- 生命周期 ----------
@@ -441,7 +484,6 @@ public final class AudioOrchestrator implements MineAudio {
     }
 
     public void onQuit(Player player) {
-        playQueues.remove(player.getUniqueId());
         searchQueries.remove(player.getUniqueId());
         PlayerAudioState state = states.remove(player.getUniqueId());
         if (state != null) {
@@ -465,8 +507,9 @@ public final class AudioOrchestrator implements MineAudio {
         }
         finishTasks.clear();
         activeSessions.clear();
+        globalSession = null;
+        globalQueue.clear();
         states.clear();
-        playQueues.clear();
         searchQueries.clear();
         terminalSessions.clear();
     }
@@ -538,7 +581,13 @@ public final class AudioOrchestrator implements MineAudio {
                 return;
             }
             if (isExpired(winner)) {
+                ActiveSession expired = audienceSession(winner.sourceId());
                 arbiter.remove(winner.sourceId());
+                if (expired != null && expired == globalSession) {
+                    // 全服曲目在被“自己”遮挡期间已过时长：切下一首
+                    endGlobalSession(expired);
+                    return;
+                }
                 continue;
             }
             if (current != null && winner.sameContent(current) && currentSession != null) {
@@ -721,10 +770,14 @@ public final class AudioOrchestrator implements MineAudio {
                 Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, session.track()));
             }
         }
-        if (music && intent != null && PERSONAL_SOURCE.equals(intent.sourceId())) {
-            advanceQueueIntent(player);
+        ActiveSession audience = intent != null ? audienceSession(intent.sourceId()) : null;
+        if (music && audience != null && audience == globalSession) {
+            // 全服曲目结束：回收受众占位并续播队列下一首
+            endGlobalSession(audience);
+        } else {
+            // 个人“自己”结束（或其它会话）：回到当前全服进度
+            reconcileMusic(player);
         }
-        reconcileMusic(player);
     }
 
     private void markAudienceCompleted(String sourceId, UUID playerId) {
@@ -775,11 +828,13 @@ public final class AudioOrchestrator implements MineAudio {
             }
             playback.handle().stop();
             Bukkit.getPluginManager().callEvent(new TrackFinishedEvent(player, playback.track()));
+            ActiveSession audience = intent != null ? audienceSession(intent.sourceId()) : null;
             if (stillPlaying && playback.track().bus() == AudioBus.MUSIC
-                    && intent != null && PERSONAL_SOURCE.equals(intent.sourceId())) {
-                advanceQueueIntent(player);
+                    && audience != null && audience == globalSession) {
+                endGlobalSession(audience);
+            } else {
+                reconcileMusic(player);
             }
-            reconcileMusic(player);
         }, ticks);
         finishTasks.put(playback.id(), task);
     }
@@ -791,13 +846,11 @@ public final class AudioOrchestrator implements MineAudio {
         if (duration <= 0) return;
         long ticks = Math.max(1, (duration + 10 * 60_000L) / 50);
         BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            activeSessions.remove(session.id());
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                PlayerAudioState state = states.get(player.getUniqueId());
-                if (state == null) continue;
-                if (state.musicArbiter().remove(audienceSource(session)) != null) {
-                    reconcileMusic(player);
-                }
+            if (session.state() == PlaybackState.STOPPED) return;
+            boolean isGlobal = globalSession == session;
+            session.stop();
+            if (isGlobal) {
+                startNextGlobal();
             }
         }, ticks);
         session.setFinishTask(task);

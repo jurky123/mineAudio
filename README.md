@@ -19,7 +19,7 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 - 三种来源：`PACK` 资源包声音、`VANILLA` 原版声音、`NBS` 音符盒曲目（NoteBlockAPI）
 - 流媒体：`STREAM` 曲目由服务端解析直链、自研客户端播放；每玩家会话，支持同步 / 暂停 / 定位 / 音量
-- 搜索与点歌：网易搜索（标题/歌手/封面/可播放性），点歌队列每玩家上限 2 首，曲目结束后自动续播
+- 搜索与点歌：网易搜索（标题/歌手/封面/可播放性），**全服点歌队列**（统一队列，上限默认 2 首），曲目结束后自动续播
 - 四种 Bus：`MUSIC`（每人一条）、`AMBIENT`（多层）、`SFX` / `UI`（短音效）
 - 范围：单玩家 / 全服 / 世界 / 区域 / 发声点（Emitter）
 - 区域：Cuboid / Sphere、chunk 索引、优先级叠加、边界迟滞、世界层 BGM、环境音层数上限
@@ -204,9 +204,9 @@ MineAudio  --解析直链 + 下发 PLAY-->  MineAudio Client（本地解码播�
 │  └────────────────────────────────────┘ │
 │  [暂停] [继续] [停止音乐] [停止环境音]   │
 │  [-15s] [+15s] [音量-] [音量+] 100% [HUD]│
-│  曲目（自己 / 全服）                     │
-│  稻香      MUSIC  STREAM   [自己][全服] │
-│  demo      MUSIC  PACK     [自己][全服] │
+│  曲目（点歌 / 自己）                     │
+│  稻香      MUSIC  STREAM   [点歌][自己] │
+│  demo      MUSIC  PACK     [点歌][自己] │
 │  环境音（AMBIENT）                       │
 │  rain                                    │
 │                  [关闭]                  │
@@ -224,6 +224,17 @@ MineAudio  --解析直链 + 下发 PLAY-->  MineAudio Client（本地解码播�
 - 未安装 MineUI 客户端的玩家回退为聊天提示，不影响其他功能
 - 页面定义：`mineaudio-paper/src/main/resources/assets/mineaudio/ui/mineaudio/player.json`（HUD 为 `hud.json`）
 - 后续（Phase 3 剩余）：搜索、队列、歌词（等 MineUI 通用能力）
+
+### 播放语义（点歌 / 自己）
+
+MineAudio 的 MUSIC 由每玩家 **Music Arbiter** 统一仲裁，优先级 **个人点播 > 业务受众 > 区域 > 世界**：
+
+- **点歌（全服队列）**：搜索结果“点歌”与曲库“点歌”→ 进入**全服点歌队列**，按全服共享时间轴统一播放；
+  空闲时立即起播，正在播放时排队，曲终自动续播下一首
+- **自己（临时）**：搜索结果“自己”与曲库“自己”→ 只对该玩家播放（PERSONAL），临时覆盖全服/区域；
+  **播放结束或手动停止后自动回到当前全服进度**（按共享时间轴对齐，不从头）
+- **停止**：自己播放中停止 → 只停止自己并回到全服；全服播放中停止 → 停止全服并清空点歌队列
+- 全服曲目在被“自己”遮挡期间越过时长时，会直接切到队列下一首，不会回到已结束的曲目
 
 ### 计分板占位符（PlaceholderAPI）
 
@@ -256,8 +267,8 @@ lines:
 /mineaudio volume <0-100> [玩家]                     # 运行时音量
 /mineaudio search <关键词>                           # 搜索网易云（标题/歌手/封面/可播放标记）
 /mineaudio search next|prev                          # 搜索结果翻页（UI 搜索页也有翻页按钮）
-/mineaudio queue add|play <序号>                     # 点歌入队（每人上限默认 2 首）/ 立即播放
-/mineaudio queue list | clear                        # 查看 / 清空点歌队列
+/mineaudio queue add|play <序号>                     # 点歌入全服队列（上限默认 2 首）/ 立即“自己”播放
+/mineaudio queue list | clear                        # 查看 / 清空全服点歌队列
 
 /mineaudio region list
 /mineaudio region pos1 | pos2                       # 记录准星方块（5 格内）

@@ -36,6 +36,9 @@
 '> 优先级 PERSONAL > AUDIENCE > REGION > WORLD；修复全服/个人互相顶替、refresh 反抢、下层无法恢复、
 '> 队列被全服卡住；队列 A→B 原子推进；ActiveSession 只表示逻辑会话；客户端至多一条 MUSIC 不变量（0.3.0）。
 '> 后续：P2 集成场景测试；MineUNO/MineChess 接入。
+'> 2026-09-20 追加：统一播放语义——点歌/曲库“点歌”进全服队列并按共享时间轴全服播放；搜索“自己”/曲库“自己”
+'> 为 PERSONAL 临时覆盖，结束/停止后自动回到全服进度；停止按钮区分（自己中→只停自己回全服，全服中→停全服清队列）；
+'> 全服曲目被自己遮挡期间越过时长则切下一首（0.3.2）。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

@@ -289,14 +289,14 @@ public final class AudioCommand implements CommandExecutor, TabCompleter {
                 AudioTrack track = com.mineaudio.playback.AudioOrchestrator.searchTrack(result);
                 if ("play".equals(action)) {
                     orchestrator.playNow(player, track);
-                    sender.sendMessage(Component.text("立即播放：" + result.title() + " - " + result.artist(),
+                    sender.sendMessage(Component.text("自己播放：" + result.title() + " - " + result.artist(),
                             NamedTextColor.GREEN));
                 } else if (orchestrator.enqueue(player, track)
                         == com.mineaudio.playback.AudioOrchestrator.EnqueueResult.FULL) {
-                    sender.sendMessage(Component.text("队列已满（每人最多 " + orchestrator.queueLimit() + " 首）",
+                    sender.sendMessage(Component.text("点歌队列已满（全服最多 " + orchestrator.queueLimit() + " 首）",
                             NamedTextColor.RED));
                 } else {
-                    sender.sendMessage(Component.text("已加入队列：" + result.title() + " - " + result.artist()
+                    sender.sendMessage(Component.text("已点歌（全服）：" + result.title() + " - " + result.artist()
                             + "（" + orchestrator.queue(player).size() + "/" + orchestrator.queueLimit() + "）",
                             NamedTextColor.GREEN));
                 }

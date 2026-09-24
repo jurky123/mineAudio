@@ -244,8 +244,8 @@ public final class MineUiIntegration implements AudioUi {
                 push(player, session);
             });
             session.on("stop", action -> {
-                plugin.orchestrator().stop(Audience.player(player), AudioBus.MUSIC);
-                session.state("note", "已停止音乐");
+                plugin.orchestrator().stopFor(player);
+                session.state("note", "已停止");
                 push(player, session);
             });
             session.on("stop_ambient", action -> {
@@ -533,13 +533,14 @@ public final class MineUiIntegration implements AudioUi {
         }
         var track = com.mineaudio.playback.AudioOrchestrator.searchTrack(result);
         if (playNow) {
-            plugin.orchestrator().playNow(player, track);
-            session.state("note", "立即播放：" + result.title());
+            // “自己”：临时只给自己听
+            plugin.orchestrator().playSelf(player, track);
+            session.state("note", "自己播放：" + result.title());
         } else if (plugin.orchestrator().enqueue(player, track)
                 == com.mineaudio.playback.AudioOrchestrator.EnqueueResult.FULL) {
-            session.state("note", "队列已满（每人最多 " + plugin.orchestrator().queueLimit() + " 首）");
+            session.state("note", "点歌队列已满（全服最多 " + plugin.orchestrator().queueLimit() + " 首）");
         } else {
-            session.state("note", "已加入队列：" + result.title());
+            session.state("note", "已点歌（全服）：" + result.title());
         }
         push(player, session);
     }
@@ -625,13 +626,27 @@ public final class MineUiIntegration implements AudioUi {
         List<Key> ids = trackOrder.get(player.getUniqueId());
         if (session == null || ids == null || index >= ids.size()) return;
         Key key = ids.get(index);
-        PlaybackHandle handle = plugin.orchestrator().play(
-                global ? Audience.global() : Audience.player(player), key);
-        if (handle.state() == PlaybackState.STOPPED) {
-            session.state("note", "无法播放：流媒体只支持“全服”，且需要客户端或 fallback");
+        AudioTrack track = plugin.trackRegistry().get(key).orElse(null);
+        if (track == null) {
+            session.state("note", "曲目不存在：" + key.asString());
+            push(player, session);
+            return;
+        }
+        if (global) {
+            // 点歌：进全服队列，按全服进度统一播放
+            var result = plugin.orchestrator().enqueue(player, track);
+            session.state("note", result == com.mineaudio.playback.AudioOrchestrator.EnqueueResult.FULL
+                    ? "点歌队列已满" : "已点歌（全服）：" + key.asString());
+            toast(player, "已加入全服队列：" + key.asString());
         } else {
-            session.state("note", "已提交播放：" + key.asString() + (global ? "（全服）" : ""));
-            toast(player, "正在播放：" + key.asString());
+            // 自己：临时只给自己听，结束/停止后回到全服进度
+            PlaybackSession playback = plugin.orchestrator().playSelf(player, track);
+            if (playback == null) {
+                session.state("note", "无法播放：需要客户端或 fallback");
+            } else {
+                session.state("note", "自己播放：" + key.asString());
+                toast(player, "正在播放（仅自己）：" + key.asString());
+            }
         }
         push(player, session);
     }

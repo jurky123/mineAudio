@@ -421,7 +421,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play0",
                       "width": 40,
                       "height": 15,
@@ -481,7 +481,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play1",
                       "width": 40,
                       "height": 15,
@@ -541,7 +541,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play2",
                       "width": 40,
                       "height": 15,
@@ -601,7 +601,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play3",
                       "width": 40,
                       "height": 15,
@@ -661,7 +661,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play4",
                       "width": 40,
                       "height": 15,
@@ -721,7 +721,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "播放",
+                      "text": "自己",
                       "action": "srch_play5",
                       "width": 40,
                       "height": 15,
@@ -858,7 +858,7 @@
               "children": [
                 {
                   "type": "text",
-                  "text": "曲目（自己 / 全服）",
+                  "text": "曲目（点歌 / 自己）",
                   "color": "#C0C0C0",
                   "scale": 0.9
                 },
@@ -901,7 +901,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global0",
                       "width": 40,
                       "height": 16,
@@ -948,7 +948,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global1",
                       "width": 40,
                       "height": 16,
@@ -995,7 +995,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global2",
                       "width": 40,
                       "height": 16,
@@ -1042,7 +1042,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global3",
                       "width": 40,
                       "height": 16,
@@ -1089,7 +1089,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global4",
                       "width": 40,
                       "height": 16,
@@ -1136,7 +1136,7 @@
                     {
                       "type": "button",
                       "skin": "vanilla:button",
-                      "text": "全服",
+                      "text": "点歌",
                       "action": "play_global5",
                       "width": 40,
                       "height": 16,
