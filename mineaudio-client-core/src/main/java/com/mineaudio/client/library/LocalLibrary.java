@@ -17,33 +17,41 @@ import java.util.stream.Stream;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 
 /**
  * 客户端本地曲库：扫描固定目录、解析元数据与封面、维护索引（磁盘缓存）并按内容 sha256 去重。
  *
- * <p>纯 Java（不依赖 MC），元数据解析由注入的 {@link MetadataProbe} 完成，便于单测。
- * 目录结构：音频文件（可含子目录）+ {@code index.json} + {@code .covers/}。</p>
+ * <p>纯 Java（不依赖 MC）。普通音频走注入的 {@link MetadataProbe}（jaudiotagger）；
+ * {@code .ncm} 由 {@link NcmDecoder} 解密为 {@code .decoded/} 下的缓存音频再索引；
+ * 同名 {@code .lrc} 作为歌词路径关联存储（暂不解析）。</p>
  */
 public final class LocalLibrary {
 
-    private static final Set<String> EXTENSIONS = Set.of(
-            "mp3", "flac", "ogg", "oga", "m4a", "mp4", "aac", "wav", "opus", "webm");
+    static final Set<String> EXTENSIONS = Set.of(
+            "mp3", "flac", "ogg", "oga", "m4a", "mp4", "aac", "wav", "opus", "webm", "ncm");
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Path dir;
     private final Path coversDir;
+    private final Path decodedDir;
     private final Path indexFile;
     private final MetadataProbe probe;
+    private final NcmDecoder ncm;
     private final List<LocalTrack> tracks = new ArrayList<>();
     private volatile long generation;
     private volatile String note = "尚未扫描";
 
     public LocalLibrary(Path dir, MetadataProbe probe) {
+        this(dir, probe, new NcmDecoder());
+    }
+
+    public LocalLibrary(Path dir, MetadataProbe probe, NcmDecoder ncm) {
         this.dir = dir;
         this.probe = probe;
+        this.ncm = ncm;
         this.coversDir = dir.resolve(".covers");
+        this.decodedDir = dir.resolve(".decoded");
         this.indexFile = dir.resolve("index.json");
     }
 
@@ -68,6 +76,10 @@ public final class LocalLibrary {
         return track.coverFile() == null ? null : dir.resolve(track.coverFile());
     }
 
+    public synchronized Path lyricsPath(LocalTrack track) {
+        return track.lyricsFile() == null ? null : dir.resolve(track.lyricsFile());
+    }
+
     /** 结构性变化计数：列表增删/扫描完成时自增（MineUI 据此重排）。 */
     public long generation() {
         return generation;
@@ -77,27 +89,28 @@ public final class LocalLibrary {
         return note;
     }
 
-    /**
-     * 扫描目录并重建索引（阻塞；调用方应放到后台线程）。未变化的文件复用缓存，不重复解析/哈希。
-     */
+    /** 扫描目录并重建索引（阻塞；调用方应放到后台线程）。未变化的文件复用缓存。 */
     public synchronized void scan() {
         try {
             Files.createDirectories(dir);
             Files.createDirectories(coversDir);
             Map<String, LocalTrack> cached = loadIndex();
             List<LocalTrack> result = new ArrayList<>();
+            int decodedFailures = 0;
             try (Stream<Path> stream = Files.walk(dir, 6)) {
                 List<Path> files = stream
                         .filter(Files::isRegularFile)
-                        .filter(p -> !p.normalize().startsWith(coversDir.normalize()))
+                        .filter(p -> !under(p, coversDir) && !under(p, decodedDir))
                         .filter(p -> !p.getFileName().toString().equals("index.json"))
                         .filter(p -> EXTENSIONS.contains(extension(p)))
                         .sorted()
                         .toList();
                 for (Path file : files) {
-                    LocalTrack track = probeOrReuse(file, cached);
+                    LocalTrack track = materialize(file, cached);
                     if (track != null) {
                         result.add(track);
+                    } else if (NcmDecoder.isNcm(file)) {
+                        decodedFailures++;
                     }
                 }
             }
@@ -107,9 +120,13 @@ public final class LocalLibrary {
             tracks.clear();
             tracks.addAll(result);
             saveIndex(result);
-            note = result.isEmpty()
-                    ? "本地曲库为空：把音频文件放进 " + dir + " 后点“刷新”"
-                    : "本地曲库：" + result.size() + " 首";
+            if (result.isEmpty()) {
+                note = "本地曲库为空：把音频文件放进 " + dir + " 后点“刷新”";
+            } else if (decodedFailures > 0) {
+                note = "本地曲库：" + result.size() + " 首（" + decodedFailures + " 个 .ncm 解密失败）";
+            } else {
+                note = "本地曲库：" + result.size() + " 首";
+            }
         } catch (Throwable t) {
             note = "扫描失败：" + t;
         } finally {
@@ -117,12 +134,15 @@ public final class LocalLibrary {
         }
     }
 
-    /** 删除某首（删除音频文件与封面，重建条目）。返回是否成功。 */
+    /** 删除某首（删除源文件、解密缓存与封面）。返回是否成功。 */
     public synchronized boolean delete(int index) {
         if (index < 0 || index >= tracks.size()) return false;
         LocalTrack track = tracks.remove(index);
         try {
             Files.deleteIfExists(track.file());
+            if (!track.playableFile().equals(track.file())) {
+                Files.deleteIfExists(track.playableFile());
+            }
             Path cover = coverPath(track);
             if (cover != null) Files.deleteIfExists(cover);
         } catch (IOException ignored) {
@@ -136,40 +156,71 @@ public final class LocalLibrary {
 
     // ---------- 内部 ----------
 
-    private LocalTrack probeOrReuse(Path file, Map<String, LocalTrack> cached) {
+    private LocalTrack materialize(Path file, Map<String, LocalTrack> cached) {
         try {
             String key = relativeKey(file);
             long size = Files.size(file);
             long mtime = Files.getLastModifiedTime(file).toMillis();
             LocalTrack previous = cached.get(key);
-            if (previous != null && previous.sizeBytes() == size && previous.modifiedMs() == mtime) {
+            if (previous != null && previous.sizeBytes() == size && previous.modifiedMs() == mtime
+                    && Files.isRegularFile(previous.playableFile())) {
                 return previous;
             }
+            String lyrics = findLyrics(file);
+
+            if (NcmDecoder.isNcm(file) && ncm != null) {
+                NcmDecoder.Decoded decoded = ncm.decode(file, decodedDir);
+                String id = sha256(decoded.audio());
+                String cover = writeCover(id, decoded.cover(), decoded.coverExt(),
+                        previous != null ? previous.coverFile() : null);
+                String title = notBlank(decoded.title()) ? decoded.title() : stem(file);
+                return new LocalTrack(id, file, decoded.audio(), size, mtime, decoded.durationMs(),
+                        title, nullToEmpty(decoded.artist()), nullToEmpty(decoded.album()), cover, lyrics);
+            }
+
             String id = sha256(file);
             TrackMeta meta = probe == null ? null : probe.probe(file);
             String title = meta != null && notBlank(meta.title()) ? meta.title() : stem(file);
-            String artist = meta != null && meta.artist() != null ? meta.artist() : "";
-            String album = meta != null && meta.album() != null ? meta.album() : "";
-            long duration = meta != null ? meta.durationMs() : -1;
-            String coverFile = writeCover(id, meta, previous);
-            return new LocalTrack(id, file, size, mtime, duration, title, artist, album, coverFile);
+            String cover = writeCover(id, meta == null ? null : meta.cover(),
+                    meta == null ? null : meta.coverExt(),
+                    previous != null ? previous.coverFile() : null);
+            return new LocalTrack(id, file, file, size, mtime,
+                    meta != null ? meta.durationMs() : -1,
+                    title,
+                    meta != null ? nullToEmpty(meta.artist()) : "",
+                    meta != null ? nullToEmpty(meta.album()) : "",
+                    cover, lyrics);
         } catch (IOException e) {
             return null;
         }
     }
 
-    private String writeCover(String id, TrackMeta meta, LocalTrack previous) {
-        if (meta != null && meta.cover() != null && meta.cover().length > 0) {
-            String ext = meta.coverExt() == null || meta.coverExt().isBlank() ? "jpg" : meta.coverExt();
-            String relative = ".covers/" + id + "." + ext;
-            try {
-                Files.write(dir.resolve(relative), meta.cover());
-                return relative;
-            } catch (IOException ignored) {
-                return previous != null ? previous.coverFile() : null;
+    /** 同名 .lrc（大小写不敏感），返回相对路径或 null。 */
+    private String findLyrics(Path source) {
+        String stem = stem(source);
+        Path parent = source.getParent();
+        if (parent == null) return null;
+        for (String ext : new String[] {"lrc", "LRC", "Lrc"}) {
+            Path candidate = parent.resolve(stem + "." + ext);
+            if (Files.isRegularFile(candidate)) {
+                return relativeKey(candidate);
             }
         }
-        return previous != null ? previous.coverFile() : null;
+        return null;
+    }
+
+    private String writeCover(String id, byte[] cover, String ext, String fallback) {
+        if (cover != null && cover.length > 0) {
+            String suffix = ext == null || ext.isBlank() ? "jpg" : ext;
+            String relative = ".covers/" + id + "." + suffix;
+            try {
+                Files.write(dir.resolve(relative), cover);
+                return relative;
+            } catch (IOException ignored) {
+                return fallback;
+            }
+        }
+        return fallback;
     }
 
     private Map<String, LocalTrack> loadIndex() {
@@ -181,8 +232,9 @@ public final class LocalLibrary {
                 for (Entry entry : index.tracks) {
                     if (entry.file == null) continue;
                     Path file = dir.resolve(entry.file);
-                    LocalTrack track = new LocalTrack(entry.id, file, entry.size, entry.mtime,
-                            entry.duration, entry.title, entry.artist, entry.album, entry.cover);
+                    Path playable = entry.playable == null ? file : dir.resolve(entry.playable);
+                    LocalTrack track = new LocalTrack(entry.id, file, playable, entry.size, entry.mtime,
+                            entry.duration, entry.title, entry.artist, entry.album, entry.cover, entry.lyrics);
                     map.put(entry.file.replace('\\', '/'), track);
                 }
             }
@@ -198,6 +250,7 @@ public final class LocalLibrary {
             Entry entry = new Entry();
             entry.id = track.id();
             entry.file = relativeKey(track.file());
+            entry.playable = relativeKey(track.playableFile());
             entry.size = track.sizeBytes();
             entry.mtime = track.modifiedMs();
             entry.duration = track.durationMs();
@@ -205,6 +258,7 @@ public final class LocalLibrary {
             entry.artist = track.artist();
             entry.album = track.album();
             entry.cover = track.coverFile();
+            entry.lyrics = track.lyricsFile();
             index.tracks.add(entry);
         }
         try {
@@ -212,6 +266,10 @@ public final class LocalLibrary {
         } catch (IOException ignored) {
             // 索引写失败不致命，下次重扫
         }
+    }
+
+    private static boolean under(Path file, Path dir) {
+        return file.normalize().startsWith(dir.normalize());
     }
 
     private String relativeKey(Path file) {
@@ -236,6 +294,10 @@ public final class LocalLibrary {
 
     private static boolean notBlank(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     /** 流式 sha256（大文件不占内存）。 */
@@ -266,6 +328,7 @@ public final class LocalLibrary {
     private static final class Entry {
         String id;
         String file;
+        String playable;
         long size;
         long mtime;
         long duration;
@@ -273,10 +336,6 @@ public final class LocalLibrary {
         String artist;
         String album;
         String cover;
-    }
-
-    static {
-        // 保持 TypeToken 引用以便未来扩展（当前 gson 反射即可）
-        TypeToken.get(IndexFile.class);
+        String lyrics;
     }
 }

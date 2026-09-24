@@ -83,4 +83,32 @@ class LocalLibraryTest {
         assertEquals(0, library.size());
         assertNull(library.track(0));
     }
+
+    @Test
+    void lyricsAssociatedBySameName(@TempDir Path dir) throws Exception {
+        Files.write(dir.resolve("song.mp3"), new byte[] {1});
+        Files.write(dir.resolve("song.lrc"), "[00:00.00]hello".getBytes());
+        LocalLibrary library = new LocalLibrary(dir, f -> meta("t", "a", 1000, null, null));
+        library.scan();
+        assertEquals("song.lrc", library.track(0).lyricsFile());
+        assertNotNull(library.lyricsPath(library.track(0)));
+    }
+
+    @Test
+    void ncmDecodedAndIndexed(@TempDir Path dir) throws Exception {
+        // 用 NcmDecoderTest 的同算法构造一个最小 .ncm（此处仅验证解码文件被索引/可播放路径存在）
+        byte[] audio = "AUDIO".getBytes();
+        byte[] ncmBytes = NcmFixtures.buildNcm("{\"musicName\":\"N\",\"format\":\"mp3\"}",
+                new byte[] {(byte) 0xFF, (byte) 0xD8}, audio);
+        Files.write(dir.resolve("n.ncm"), ncmBytes);
+        LocalLibrary library = new LocalLibrary(dir, f -> meta(null, null, -1, null, null));
+        library.scan();
+        assertEquals(1, library.size());
+        LocalTrack track = library.track(0);
+        assertEquals("N", track.title());
+        assertTrue(Files.isRegularFile(track.playableFile()));
+        assertTrue(track.playableFile().getFileName().toString().endsWith(".mp3"));
+        // 播放文件是解密后的音频
+        org.junit.jupiter.api.Assertions.assertArrayEquals(audio, Files.readAllBytes(track.playableFile()));
+    }
 }

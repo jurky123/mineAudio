@@ -391,7 +391,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
         Packets.Play play = new Packets.Play(
                 "local:" + track.id(), "local", track.id(),
-                track.file().toAbsolutePath().toString(),
+                track.playableFile().toAbsolutePath().toString(),
                 Map.of(), 0, 0, 0, 0, 1f, "MUSIC", 0, track.durationMs(),
                 track.title(), track.artist(), null, null);
         Session session = new Session(sessionId, play, true);

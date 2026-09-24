@@ -244,6 +244,8 @@ MineAudio 的 MUSIC 由每玩家 **Music Arbiter** 统一仲裁，优先级 **�
 放进客户端目录，本地解析并直接试听，**不占用服务器存储、不经服务器播放**。
 
 - 目录：`<游戏目录>/config/mineaudio/library/`（可含子目录），把 `mp3 / flac / ogg / m4a / wav …` 放进去
+- 网易云格式：直接放 **`.ncm`** 即可，客户端**内置解密**（AES + keyBox，无新依赖）到 `library/.decoded/<sha256>.<ext>`，
+  并从 NCM 内嵌元数据取标题/歌手/专辑/时长/封面；同名 **`.lrc`** 会按文件名关联存储（歌词显示待 MineUI 能力）
 - 解析：jaudiotagger 读取标题 / 歌手 / 专辑 / 时长与**嵌入封面**；无标签时用文件名兜底
 - 索引：`library/index.json` 按“大小 + 修改时间”缓存，未变化的文件不重复解析；按内容 sha256 去重
 - 封面：导出到 `library/.covers/<sha256>.<ext>`（供后续分发用）

@@ -43,6 +43,8 @@
 '> jaudiotagger 解析标题/歌手/专辑/时长与嵌入封面（导出 .covers），按大小+修改时间缓存索引、按 sha256 去重，
 '> MineUI 本地绑定 `{local.mineaudio.library}` + `local:mineaudio.lib_play/lib_refresh/lib_delete` 本地试听；
 '> 点歌到全服的文件上传/分发为 M2（服务器临时缓存托管）。
+'> 2026-09-24 追加：本地曲库支持网易云 .ncm（客户端内置解密 AES+keyBox，缓存到 .decoded）、
+'> 同名 .lrc 关联存储（歌词后续显示）；NCM 解码器纯 Java 可单测（0.4.1）。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`
