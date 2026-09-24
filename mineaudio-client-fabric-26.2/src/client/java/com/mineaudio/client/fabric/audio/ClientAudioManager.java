@@ -475,7 +475,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 track.playableFile().toAbsolutePath().toString(),
                 Map.of(), 0, 0, 0, 0, 1f, "MUSIC", 0, track.durationMs(),
                 track.title(), track.artist(), null, null);
-        Session session = new Session(sessionId, play, true);
+        Session session = new Session(sessionId, play, true, track);
         sessions.put(sessionId, session);
         current = session;
         session.start();
@@ -501,6 +501,8 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final Packets.Play.Spatial spatial;
         /** 本地文件试听：不校验/不经过媒体网关，不向服务端上报状态。 */
         private final boolean local;
+        /** 本地试听项（.ncm 在 prepare 线程按需解密）。 */
+        private final com.mineaudio.client.library.LocalTrack localTrack;
         /** 媒体内容标识（不含会话身份），跨会话复用缓存。 */
         private final String cacheKey;
         private final PcmRingBuffer ring = new PcmRingBuffer(RING_BYTES);
@@ -544,12 +546,18 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private final long createdAtMs = System.currentTimeMillis();
 
         Session(String sessionId, Packets.Play play) {
-            this(sessionId, play, false);
+            this(sessionId, play, false, null);
         }
 
         Session(String sessionId, Packets.Play play, boolean localOnly) {
+            this(sessionId, play, localOnly, null);
+        }
+
+        Session(String sessionId, Packets.Play play, boolean localOnly,
+                com.mineaudio.client.library.LocalTrack localTrack) {
             this.id = sessionId;
             this.local = localOnly;
+            this.localTrack = localTrack;
             this.revision = play.resourceVersion();
             this.url = play.url();
             this.cacheKey = buildCacheKey(play);
@@ -576,8 +584,17 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         private void prepare() {
             String playUrl = url;
             if (local) {
-                // 本地文件直接交给解码器（file: 由 LavaPlayer LocalAudioSourceManager 处理）
-                decoder.start(playUrl, startPositionMs, this);
+                // 本地文件直接交给解码器；.ncm 在 prepare 线程按需解密（不阻塞渲染线程）
+                String path = playUrl;
+                if (localTrack != null && library != null) {
+                    try {
+                        path = library.ensureDecoded(localTrack).toString();
+                    } catch (Throwable t) {
+                        fail("LOCAL_DECODE", t.toString());
+                        return;
+                    }
+                }
+                decoder.start(path, startPositionMs, this);
                 return;
             }
             try {

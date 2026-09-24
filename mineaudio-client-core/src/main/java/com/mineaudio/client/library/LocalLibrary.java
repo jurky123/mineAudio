@@ -8,6 +8,7 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -103,6 +104,7 @@ public final class LocalLibrary {
             Files.createDirectories(dir);
             Files.createDirectories(coversDir);
             Map<String, LocalTrack> cached = loadIndex();
+            Map<String, Path> decodedFiles = listDecoded();
             List<LocalTrack> result = new ArrayList<>();
             int failures = 0;
             lastFailure = null;
@@ -115,7 +117,7 @@ public final class LocalLibrary {
                         .sorted()
                         .toList();
                 for (Path file : files) {
-                    LocalTrack track = materialize(file, cached);
+                    LocalTrack track = materialize(file, cached, decodedFiles);
                     if (track != null) {
                         result.add(track);
                     } else {
@@ -169,47 +171,83 @@ public final class LocalLibrary {
 
     // ---------- 内部 ----------
 
-    private LocalTrack materialize(Path file, Map<String, LocalTrack> cached) {
+    /** 已解密的缓存文件（按 baseName 索引，扩展名可能不同）。 */
+    private Map<String, Path> listDecoded() {
+        Map<String, Path> map = new HashMap<>();
+        if (!Files.isDirectory(decodedDir)) return map;
+        try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(decodedDir)) {
+            for (Path path : stream) {
+                String name = path.getFileName().toString();
+                int dot = name.lastIndexOf('.');
+                if (dot > 0) {
+                    map.put(name.substring(0, dot), path);
+                }
+            }
+        } catch (IOException ignored) {
+            // 解密目录不可读时按未解密处理
+        }
+        return map;
+    }
+
+    /**
+     * 确保 .ncm 已解密为可播放文件（按需调用，切勿在渲染线程调用）。
+     * 解码后用 jaudiotagger 补全元数据并原子更新快照；返回实际可播放路径。
+     */
+    public Path ensureDecoded(LocalTrack track) throws IOException {
+        if (!NcmDecoder.isNcm(track.file()) || ncm == null) {
+            return track.file();
+        }
+        if (Files.isRegularFile(track.playableFile())) {
+            return track.playableFile();
+        }
+        NcmDecoder.Decoded decoded = ncm.decode(track.file(), decodedDir);
+        Path actual = decoded.audio();
+        TrackMeta meta = probe == null ? null : probe.probe(actual);
+        List<LocalTrack> snapshot = tracks;
+        List<LocalTrack> updated = new ArrayList<>(snapshot.size());
+        for (LocalTrack existing : snapshot) {
+            if (existing.id().equals(track.id())) {
+                updated.add(new LocalTrack(existing.id(), existing.file(), actual,
+                        existing.sizeBytes(), existing.modifiedMs(),
+                        meta != null && meta.durationMs() > 0 ? meta.durationMs() : existing.durationMs(),
+                        meta != null && notBlank(meta.title()) ? meta.title() : existing.title(),
+                        meta != null && notBlank(meta.artist()) ? meta.artist() : existing.artist(),
+                        meta != null && notBlank(meta.album()) ? meta.album() : existing.album(),
+                        existing.coverFile(), existing.lyricsFile()));
+            } else {
+                updated.add(existing);
+            }
+        }
+        tracks = List.copyOf(updated);
+        generation++;
+        return actual;
+    }
+
+    private LocalTrack materialize(Path file, Map<String, LocalTrack> cached, Map<String, Path> decodedFiles) {
         try {
             String key = relativeKey(file);
             long size = Files.size(file);
             long mtime = Files.getLastModifiedTime(file).toMillis();
             LocalTrack previous = cached.get(key);
-            if (previous != null && previous.sizeBytes() == size && previous.modifiedMs() == mtime
-                    && Files.isRegularFile(previous.playableFile())) {
+            if (previous != null && previous.sizeBytes() == size && previous.modifiedMs() == mtime) {
+                // 未变化：直接复用索引（.ncm 的音频按需解密，不要求 playable 已存在）
                 return previous;
             }
             String lyrics = findLyrics(file);
 
             if (NcmDecoder.isNcm(file) && ncm != null) {
-                NcmDecoder.Decoded decoded = ncm.decode(file, decodedDir);
-                String id = sha256(decoded.audio());
-                long duration = decoded.durationMs();
-                String title = decoded.title();
-                String artist = decoded.artist();
-                String album = decoded.album();
-                byte[] coverBytes = decoded.cover();
-                String coverExt = decoded.coverExt();
-                // NCM 元数据缺失时，用 jaudiotagger 从解出的音频补全
-                if (probe != null && (!notBlank(title) || duration <= 0
-                        || coverBytes == null || coverBytes.length == 0)) {
-                    TrackMeta meta = probe.probe(decoded.audio());
-                    if (meta != null) {
-                        if (!notBlank(title)) title = meta.title();
-                        if (!notBlank(artist)) artist = meta.artist();
-                        if (!notBlank(album)) album = meta.album();
-                        if (duration <= 0) duration = meta.durationMs();
-                        if ((coverBytes == null || coverBytes.length == 0) && meta.cover() != null) {
-                            coverBytes = meta.cover();
-                            coverExt = meta.coverExt();
-                        }
-                    }
+                // 只探测头部/meta/封面（不解码音频），音频在试听/上传时按需解密
+                NcmDecoder.Probe probeResult = ncm.probe(file);
+                String id = probeResult.id();
+                Path playable = decodedFiles.get(id);
+                if (playable == null) {
+                    playable = decodedDir.resolve(id + "." + probeResult.ext());
                 }
-                String cover = writeCover(id, coverBytes, coverExt,
+                String cover = writeCover(id, probeResult.cover(), probeResult.coverExt(),
                         previous != null ? previous.coverFile() : null);
-                return new LocalTrack(id, file, decoded.audio(), size, mtime, duration,
-                        notBlank(title) ? title : stem(file),
-                        nullToEmpty(artist), nullToEmpty(album), cover, lyrics);
+                return new LocalTrack(id, file, playable, size, mtime, probeResult.durationMs(),
+                        notBlank(probeResult.title()) ? probeResult.title() : stem(file),
+                        nullToEmpty(probeResult.artist()), nullToEmpty(probeResult.album()), cover, lyrics);
             }
 
             String id = sha256(file);

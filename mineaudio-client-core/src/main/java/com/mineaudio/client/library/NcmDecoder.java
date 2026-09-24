@@ -1,5 +1,7 @@
 package com.mineaudio.client.library;
 
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,8 +42,68 @@ public final class NcmDecoder {
         return extension(file).equals("ncm");
     }
 
+    /** 轻量探测结果：只读 NCM 头部/meta/封面，不解码音频（扫描用，避免卡顿）。 */
+    public record Probe(String id, String ext, long durationMs, String title, String artist,
+                        String album, byte[] cover, String coverExt) {
+    }
+
     /**
-     * 解密到 {@code outDir/<sha256(source)>.mp3|flac}；已存在且大小一致则直接复用。
+     * 流式探测：读取 magic/keyLen/meta/封面后即停止，不读取音频、不解密，成本与文件大小无关。
+     */
+    public Probe probe(Path source) throws IOException {
+        String id = LocalLibrary.sha256(source);
+        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(source)))) {
+            byte[] magic = readN(in, 8);
+            if (!java.util.Arrays.equals(magic, MAGIC)) {
+                throw new IOException("不是有效的 .ncm（magic 不匹配）");
+            }
+            skipN(in, 2);
+            int keyLen = readIntLE(in);
+            skipN(in, keyLen);
+            int metaLen = readIntLE(in);
+            byte[] metaRaw = readN(in, metaLen);
+            JsonObject meta = readMetaBytes(metaRaw);
+            skipN(in, 4); // crc
+            skipN(in, 5); // gap
+            int imageSize = readIntLE(in);
+            byte[] cover = imageSize > 0 && imageSize <= 32 * 1024 * 1024 ? readN(in, imageSize) : new byte[0];
+            String ext = meta != null && meta.has("format") && !meta.get("format").isJsonNull()
+                    ? meta.get("format").getAsString().toLowerCase(java.util.Locale.ROOT) : "mp3";
+            long duration = meta != null && meta.has("duration") ? meta.get("duration").getAsLong() : -1;
+            return new Probe(id, ext, duration, optString(meta, "musicName"), optArtist(meta),
+                    optString(meta, "album"), cover, coverExt(cover));
+        }
+    }
+
+    private static byte[] readN(DataInputStream in, int n) throws IOException {
+        byte[] out = new byte[n];
+        in.readFully(out);
+        return out;
+    }
+
+    private static void skipN(DataInputStream in, int n) throws IOException {
+        int remaining = n;
+        while (remaining > 0) {
+            int skipped = (int) in.skip(remaining);
+            if (skipped <= 0) {
+                if (in.read() < 0) throw new IOException(".ncm 结构越界");
+                skipped = 1;
+            }
+            remaining -= skipped;
+        }
+    }
+
+    private static int readIntLE(DataInputStream in) throws IOException {
+        int b0 = in.read();
+        int b1 = in.read();
+        int b2 = in.read();
+        int b3 = in.read();
+        if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0) throw new IOException(".ncm 读取 int 越界");
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+
+    /**
+     * 解密到 {@code outDir/<sha256(source)>.<ext>}；已存在且大小一致则直接复用。
      */
     public Decoded decode(Path source, Path outDir) throws IOException {
         byte[] raw = Files.readAllBytes(source);

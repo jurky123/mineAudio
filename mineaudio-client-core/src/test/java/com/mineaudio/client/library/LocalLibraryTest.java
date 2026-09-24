@@ -96,7 +96,7 @@ class LocalLibraryTest {
 
     @Test
     void ncmDecodedAndIndexed(@TempDir Path dir) throws Exception {
-        // 用 NcmDecoderTest 的同算法构造一个最小 .ncm（此处仅验证解码文件被索引/可播放路径存在）
+        // 扫描只探测（不解码）；试听/上传时才 ensureDecoded
         byte[] audio = "AUDIO".getBytes();
         byte[] ncmBytes = NcmFixtures.buildNcm("{\"musicName\":\"N\",\"format\":\"mp3\"}",
                 new byte[] {(byte) 0xFF, (byte) 0xD8}, audio);
@@ -106,9 +106,12 @@ class LocalLibraryTest {
         assertEquals(1, library.size());
         LocalTrack track = library.track(0);
         assertEquals("N", track.title());
-        assertTrue(Files.isRegularFile(track.playableFile()));
-        assertTrue(track.playableFile().getFileName().toString().endsWith(".mp3"));
-        // 播放文件是解密后的音频
-        org.junit.jupiter.api.Assertions.assertArrayEquals(audio, Files.readAllBytes(track.playableFile()));
+        // 扫描阶段不解码
+        assertTrue(Files.notExists(track.playableFile()));
+
+        Path decoded = library.ensureDecoded(track);
+        assertTrue(Files.isRegularFile(decoded));
+        assertTrue(decoded.getFileName().toString().endsWith(".mp3"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(audio, Files.readAllBytes(decoded));
     }
 }

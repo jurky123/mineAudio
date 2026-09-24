@@ -30,6 +30,11 @@ public final class LocalLibraryService {
         return library;
     }
 
+    /** 确保本地项可播放（.ncm 按需解密）；只在后台线程调用。 */
+    public Path ensureDecoded(com.mineaudio.client.library.LocalTrack track) throws java.io.IOException {
+        return library.ensureDecoded(track);
+    }
+
     /** 后台扫描（不阻塞渲染线程）。 */
     public void scanAsync() {
         Thread thread = new Thread(() -> {
