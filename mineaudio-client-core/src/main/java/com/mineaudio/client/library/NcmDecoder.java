@@ -90,7 +90,7 @@ public final class NcmDecoder {
         for (int i = 0; i < meta.length; i++) {
             meta[i] ^= 0x63;
         }
-        meta = Base64.getDecoder().decode(meta);
+        meta = Base64.getMimeDecoder().decode(meta);
         meta = aesDecrypt(meta, META_KEY);
         meta = java.util.Arrays.copyOfRange(meta, META_PREFIX.length(), meta.length);
         try {

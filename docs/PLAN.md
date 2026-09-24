@@ -48,6 +48,8 @@
 '> 2026-09-24 追加：本地曲库 UI 因 MineUI `list.items` 仅支持 `{state.*}`（不支持 local 列表），
 '> 改为固定 8 插槽 + 本地标量绑定 `{local.mineaudio.libN_*}` + 翻页动作（0.4.2）。
 '> 歌词能力：MineUI 目前仅有通用 `list` 组件（`/mineui lyrics` 为演示），无音频同步歌词能力，MineAudio 侧未接入。
+'> 2026-09-24 追加：修复真实 .ncm 解析——meta base64 含空白，Java 严格解码器报 Illegal base64 character 20，
+'> 改用 MIME 解码器；单文件失败不再中断整体扫描，曲库提示显示首个失败原因（0.4.3）。
 '
 '> 待办：歌词（等 MineUI 通用能力）、MineUNO/MineChess 接入、正式版客户端包。
 > Phase 8（D 方案）已完成第一版：`StreamResolver` 边界 + `DirectUrlResolver` + `NeteaseEapiResolver`

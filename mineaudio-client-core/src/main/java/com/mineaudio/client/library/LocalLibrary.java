@@ -41,6 +41,7 @@ public final class LocalLibrary {
     private final List<LocalTrack> tracks = new ArrayList<>();
     private volatile long generation;
     private volatile String note = "尚未扫描";
+    private volatile String lastFailure;
 
     public LocalLibrary(Path dir, MetadataProbe probe) {
         this(dir, probe, new NcmDecoder());
@@ -96,7 +97,8 @@ public final class LocalLibrary {
             Files.createDirectories(coversDir);
             Map<String, LocalTrack> cached = loadIndex();
             List<LocalTrack> result = new ArrayList<>();
-            int decodedFailures = 0;
+            int failures = 0;
+            lastFailure = null;
             try (Stream<Path> stream = Files.walk(dir, 6)) {
                 List<Path> files = stream
                         .filter(Files::isRegularFile)
@@ -109,8 +111,8 @@ public final class LocalLibrary {
                     LocalTrack track = materialize(file, cached);
                     if (track != null) {
                         result.add(track);
-                    } else if (NcmDecoder.isNcm(file)) {
-                        decodedFailures++;
+                    } else {
+                        failures++;
                     }
                 }
             }
@@ -120,10 +122,11 @@ public final class LocalLibrary {
             tracks.clear();
             tracks.addAll(result);
             saveIndex(result);
-            if (result.isEmpty()) {
+            if (result.isEmpty() && failures == 0) {
                 note = "本地曲库为空：把音频文件放进 " + dir + " 后点“刷新”";
-            } else if (decodedFailures > 0) {
-                note = "本地曲库：" + result.size() + " 首（" + decodedFailures + " 个 .ncm 解密失败）";
+            } else if (failures > 0) {
+                note = "本地曲库：" + result.size() + " 首（" + failures + " 个文件失败："
+                        + (lastFailure == null ? "" : lastFailure) + "）";
             } else {
                 note = "本地曲库：" + result.size() + " 首";
             }
@@ -190,7 +193,9 @@ public final class LocalLibrary {
                     meta != null ? nullToEmpty(meta.artist()) : "",
                     meta != null ? nullToEmpty(meta.album()) : "",
                     cover, lyrics);
-        } catch (IOException e) {
+        } catch (Throwable t) {
+            // 单个文件失败不影响整体扫描；记录原因供 UI 提示
+            lastFailure = file.getFileName() + "：" + t;
             return null;
         }
     }
