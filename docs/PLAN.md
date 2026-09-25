@@ -424,3 +424,10 @@ V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHo
 - 客户端：`lib_queue` 后台线程上传音频（.ncm 先解密）+ 封面 → `LIBRARY_ADD`；`lib_queue_note` 显示状态；
   `prepare()` 对 `HELLO_ACK.Library.baseUrl` 前缀的 URL 显式信任（跳过 MediaFirewall/网关）
 - 其他玩家：PLAY.coverUrl 指向自托管封面；需把托管主机加入 MineUI `remote-images.allowed-domains`
+
+### 本地曲库“自己”播放（0.5.4）
+- 本地曲库按钮：「自己」= 只上报本地曲目 id（不上传），服务端按 PERSONAL 下发 PLAY；
+  客户端 `prepare()` 识别哨兵 `mineaudio-local:<id>` → 映射本机文件（.ncm 按需解密）播放；
+  结束/停止后按仲裁回全服进度。「点歌」仍走上传 + 全服队列。
+- 协议：`Packets.LibraryAdd(... , boolean global)`；`Packets.LIBRARY_SOURCE/LOCAL_LIBRARY_SOURCE/LOCAL_LIBRARY_URL_PREFIX`。
+- 另：MineUI `remote-images.allowed-domains` 已加 `43.160.211.42`（封面显示要求公网地址 + 白名单）。

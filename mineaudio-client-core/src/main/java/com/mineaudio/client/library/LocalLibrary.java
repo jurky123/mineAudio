@@ -81,6 +81,15 @@ public final class LocalLibrary {
         return index >= 0 && index < snapshot.size() ? snapshot.get(index) : null;
     }
 
+    /** 按内容 id 查曲目（“自己”播放时服务端回传 id）。 */
+    public LocalTrack byId(String id) {
+        if (id == null) return null;
+        for (LocalTrack track : tracks) {
+            if (id.equals(track.id())) return track;
+        }
+        return null;
+    }
+
     public Path coverPath(LocalTrack track) {
         return track.coverFile() == null ? null : dir.resolve(track.coverFile());
     }

@@ -979,7 +979,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_0",
                           "width": 40,
                           "height": 15,
@@ -1026,7 +1026,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_1",
                           "width": 40,
                           "height": 15,
@@ -1073,7 +1073,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_2",
                           "width": 40,
                           "height": 15,
@@ -1120,7 +1120,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_3",
                           "width": 40,
                           "height": 15,
@@ -1167,7 +1167,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_4",
                           "width": 40,
                           "height": 15,
@@ -1214,7 +1214,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_5",
                           "width": 40,
                           "height": 15,
@@ -1261,7 +1261,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_6",
                           "width": 40,
                           "height": 15,
@@ -1308,7 +1308,7 @@
                         {
                           "type": "button",
                           "skin": "vanilla:button",
-                          "text": "试听",
+                          "text": "自己",
                           "action": "local:mineaudio.lib_play_7",
                           "width": 40,
                           "height": 15,

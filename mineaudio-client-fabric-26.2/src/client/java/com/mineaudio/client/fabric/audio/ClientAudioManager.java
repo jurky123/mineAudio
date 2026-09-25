@@ -471,7 +471,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         int slot = slotOf(action);
         if (slot >= 0) {
             int absolute = libPage * LIB_PAGE_SIZE + slot;
-            if (action.startsWith("lib_play_")) return playLocalByIndex(absolute);
+            if (action.startsWith("lib_play_")) return playSelfViaServer(absolute);
             if (action.startsWith("lib_delete_")) return lib.library().delete(absolute);
             if (action.startsWith("lib_queue_")) return queueLocalToGlobal(absolute);
         }
@@ -492,6 +492,26 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /**
+     * “自己”：请求服务端按 PERSONAL 播放本机文件（不发音频，服务端只回哨兵 URL）；
+     * 结束/停止后按仲裁逻辑回到全服进度。未连接服务端时退回纯本地试听。
+     */
+    private boolean playSelfViaServer(int index) {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        if (lib == null) return false;
+        com.mineaudio.client.library.LocalTrack track = lib.library().track(index);
+        if (track == null) return false;
+        if (!ProtocolClient.get().connected()) {
+            playLocalPreview(track);
+            return true;
+        }
+        ProtocolClient.get().sendLibraryAdd(new Packets.LibraryAdd(
+                track.id(), "", null, null,
+                track.title(), track.artist(), track.album(), track.durationMs(), false));
+        libQueueNote = "自己播放：" + track.title();
+        return true;
     }
 
     /**
@@ -522,7 +542,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
                 }
                 ProtocolClient.get().sendLibraryAdd(new Packets.LibraryAdd(
                         uploadedAudio[0], uploadedAudio[1], coverId, coverExt,
-                        track.title(), track.artist(), track.album(), track.durationMs()));
+                        track.title(), track.artist(), track.album(), track.durationMs(), true));
                 libQueueNote = "已点歌（全服）：" + track.title();
             } catch (Throwable t) {
                 libQueueNote = "上传失败：" + t.getMessage();
@@ -694,6 +714,26 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** 校验 URL 并注册到本机网关（含缓存），解码器只访问 127.0.0.1。 */
         private void prepare() {
             String playUrl = url;
+            // “自己”播放：服务端回哨兵 URL，客户端映射到本机文件（不上传、不走网络）
+            if (url != null && url.startsWith(Packets.LOCAL_LIBRARY_URL_PREFIX)) {
+                String localId = url.substring(Packets.LOCAL_LIBRARY_URL_PREFIX.length());
+                com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+                if (lib == null) {
+                    fail("LOCAL_LIBRARY", "本地曲库不可用");
+                    return;
+                }
+                com.mineaudio.client.library.LocalTrack track = lib.library().byId(localId);
+                if (track == null) {
+                    fail("LOCAL_LIBRARY", "本地曲目不存在：" + localId);
+                    return;
+                }
+                try {
+                    decoder.start(lib.ensureDecoded(track).toString(), startPositionMs, this);
+                } catch (Throwable t) {
+                    fail("LOCAL_DECODE", t.toString());
+                }
+                return;
+            }
             // 服务端自托管的本地曲库音频：显式信任该基址，跳过客户端媒体防火墙/网关
             if (!libraryBase.isBlank() && url != null && url.startsWith(libraryBase)) {
                 decoder.start(playUrl, startPositionMs, this);

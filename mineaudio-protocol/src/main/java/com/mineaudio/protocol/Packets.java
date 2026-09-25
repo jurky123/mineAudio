@@ -6,6 +6,13 @@ import java.util.Map;
 /** 所有协议消息 DTO（Gson 序列化，未知字段忽略）。 */
 public final class Packets {
 
+    /** 本地曲库上传源（服务端托管）。 */
+    public static final String LIBRARY_SOURCE = "library";
+    /** “自己”自托管源：服务端只回哨兵 URL，客户端映射到本机文件。 */
+    public static final String LOCAL_LIBRARY_SOURCE = "local-library";
+    /** “自己”哨兵 URL 前缀（PLAY.url）。 */
+    public static final String LOCAL_LIBRARY_URL_PREFIX = "mineaudio-local:";
+
     private Packets() {
     }
 
@@ -102,7 +109,7 @@ public final class Packets {
     public record ErrorReport(String code, String message) {
     }
 
-    /** 客户端本地曲库上传完成后，请求服务端把该曲目加入全服队列。 */
+    /** 客户端本地曲库：{@code global=true} 表示已上传到服务器并入全服队列；否则为“自己”（只本机播放）。 */
     public record LibraryAdd(
             String audioId,
             String audioExt,
@@ -111,6 +118,7 @@ public final class Packets {
             String title,
             String artist,
             String album,
-            long durationMs) {
+            long durationMs,
+            boolean global) {
     }
 }

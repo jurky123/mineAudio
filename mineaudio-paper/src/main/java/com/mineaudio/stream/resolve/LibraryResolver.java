@@ -13,6 +13,9 @@ import com.mineaudio.library.LibraryHost;
 public final class LibraryResolver implements StreamResolver {
 
     public static final String SOURCE = "library";
+    /** “自己”播放的自托管哨兵：url 前缀，由客户端映射到本机文件（不上传也不走网络）。 */
+    public static final String LOCAL_SOURCE = "local-library";
+    public static final String LOCAL_URL_PREFIX = "mineaudio-local:";
 
     private final LibraryHost host;
 
@@ -27,11 +30,20 @@ public final class LibraryResolver implements StreamResolver {
 
     @Override
     public boolean supports(ResolveRequest request) {
-        return SOURCE.equalsIgnoreCase(request.source());
+        return SOURCE.equalsIgnoreCase(request.source()) || LOCAL_SOURCE.equalsIgnoreCase(request.source());
     }
 
     @Override
     public CompletionStage<ResolveResult> resolve(ResolveRequest request) {
+        if (LOCAL_SOURCE.equalsIgnoreCase(request.source())) {
+            String localId = request.id();
+            if (localId == null || localId.isBlank()) {
+                return CompletableFuture.failedFuture(
+                        new ResolveException(ResolveFailureKind.NOT_PLAYABLE, "本地曲目 id 缺失"));
+            }
+            return CompletableFuture.completedFuture(
+                    ResolveResult.url(URI.create(LOCAL_URL_PREFIX + localId)));
+        }
         String id = request.id();
         if (host == null || id == null || id.isBlank()) {
             return CompletableFuture.failedFuture(

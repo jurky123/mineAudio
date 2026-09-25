@@ -422,12 +422,24 @@ public final class AudioOrchestrator implements MineAudio {
         return playSelf(player, track);
     }
 
-    /** 客户端本地曲库上传完成：构造动态 STREAM 曲目并入全服队列（分发给所有玩家）。 */
+    /** 客户端本地曲库：{@code global=true} 已上传 → 入全服队列；否则按“自己”只给该玩家播放。 */
     public void onLibraryAdd(Player player, Packets.LibraryAdd add) {
+        if (add == null || add.audioId() == null || add.audioId().isBlank()) return;
+        if (!add.global()) {
+            // “自己”：不发音频，客户端回落本机文件；服务端按 PERSONAL 下发，结束/停止回全服
+            AudioTrack track = new AudioTrack(Key.key("mineaudio", "local_" + add.audioId()), AudioBus.MUSIC,
+                    new AudioSource.Stream("mineaudio",
+                            com.mineaudio.stream.resolve.LibraryResolver.LOCAL_SOURCE, add.audioId(), null),
+                    PlaybackOptions.DEFAULT,
+                    new AudioMetadata(add.title(), add.artist(), add.durationMs()));
+            playSelf(player, track);
+            debug(player.getName() + " 本地曲库“自己”播放：" + add.title());
+            return;
+        }
         com.mineaudio.library.LibraryHost host = plugin.libraryHost();
-        if (host == null || add == null || add.audioId() == null || add.audioExt() == null
+        if (host == null || add.audioExt() == null || add.audioExt().isBlank()
                 || !host.contains(add.audioId(), add.audioExt())) {
-            debug("本地曲库上传无效或已过期：" + (add == null ? "null" : add.audioId()));
+            debug("本地曲库上传无效或已过期：" + add.audioId());
             return;
         }
         String libraryId = add.audioId() + "|" + add.audioExt() + "|"
