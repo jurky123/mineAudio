@@ -198,7 +198,13 @@ public final class MineAudioPlugin extends JavaPlugin {
             getLogger().info("网易解析器已启用（凭证：" + (netease.hasCredential() ? "已配置" : "未配置，仅匿名")
                     + "，音质：" + level + "）");
         }
-        return new StreamResolverChain(java.util.List.of(new DirectUrlResolver(), netease));
+        java.util.List<com.mineaudio.stream.resolve.StreamResolver> chain = new java.util.ArrayList<>();
+        if (libraryHost != null) {
+            chain.add(new com.mineaudio.stream.resolve.LibraryResolver(libraryHost));
+        }
+        chain.add(new DirectUrlResolver());
+        chain.add(netease);
+        return new StreamResolverChain(chain);
     }
 
     private void warn(String message) {

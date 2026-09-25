@@ -2,6 +2,11 @@ package com.mineaudio.client.fabric.audio;
 
 import java.lang.reflect.Field;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -74,6 +79,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
     private static final int LIB_PAGE_SIZE = 8;
     private volatile int libPage;
     private volatile long libPageGeneration;
+    /** 服务端本地曲库托管信息（HELLO_ACK 下发）。 */
+    private volatile String libraryBase = "";
+    private volatile String libraryUpload = "";
+    private volatile String libraryToken = "";
+    private volatile String libQueueNote = "";
 
     public void setLibrary(com.mineaudio.client.fabric.library.LocalLibraryService library) {
         this.library = library;
@@ -93,6 +103,9 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         }
         if (key.equals("lib_note")) {
             return lib == null ? "" : lib.library().note();
+        }
+        if (key.equals("lib_queue_note")) {
+            return libQueueNote;
         }
         int total = lib == null ? 0 : lib.library().size();
         int pages = Math.max(1, (total + LIB_PAGE_SIZE - 1) / LIB_PAGE_SIZE);
@@ -288,6 +301,13 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
                 "服务端已确认 MineAudio 客户端（server={} report={}ms）",
                 ack.serverVersion(), ack.reportIntervalMs());
+        if (ack.library() != null) {
+            libraryBase = ack.library().baseUrl() == null ? "" : ack.library().baseUrl();
+            libraryUpload = ack.library().uploadUrl() == null ? "" : ack.library().uploadUrl();
+            libraryToken = ack.library().token() == null ? "" : ack.library().token();
+            com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.info(
+                    "[library] 服务端托管：base={} upload={}", libraryBase, libraryUpload);
+        }
     }
 
     @Override
@@ -453,7 +473,7 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             int absolute = libPage * LIB_PAGE_SIZE + slot;
             if (action.startsWith("lib_play_")) return playLocalByIndex(absolute);
             if (action.startsWith("lib_delete_")) return lib.library().delete(absolute);
-            if (action.startsWith("lib_queue_")) return false; // M2：上传分发
+            if (action.startsWith("lib_queue_")) return queueLocalToGlobal(absolute);
         }
         // 兼容带 payload index 的旧写法（list 版本）
         if (action.equals("lib_play")) return playLocalByIndex(indexOf(payload));
@@ -472,6 +492,72 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /**
+     * 点歌到全服：后台线程把音频（.ncm 先按需解密）与封面上传到服务端，
+     * 成功后发 LIBRARY_ADD，由服务端入全服队列并下发给所有玩家。
+     */
+    private boolean queueLocalToGlobal(int index) {
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        if (lib == null) return false;
+        com.mineaudio.client.library.LocalTrack track = lib.library().track(index);
+        if (track == null) return false;
+        if (libraryUpload.isBlank() || libraryToken.isBlank()) {
+            libQueueNote = "服务器未启用本地曲库托管";
+            return false;
+        }
+        libQueueNote = "正在上传：" + track.title() + "…";
+        Thread thread = new Thread(() -> {
+            try {
+                Path audio = lib.ensureDecoded(track);
+                String[] uploadedAudio = uploadFile(audio, "audio", extension(audio));
+                String coverId = null;
+                String coverExt = null;
+                Path cover = lib.library().coverPath(track);
+                if (cover != null && Files.isRegularFile(cover)) {
+                    String[] uploadedCover = uploadFile(cover, "cover", extension(cover));
+                    coverId = uploadedCover[0];
+                    coverExt = uploadedCover[1];
+                }
+                ProtocolClient.get().sendLibraryAdd(new Packets.LibraryAdd(
+                        uploadedAudio[0], uploadedAudio[1], coverId, coverExt,
+                        track.title(), track.artist(), track.album(), track.durationMs()));
+                libQueueNote = "已点歌（全服）：" + track.title();
+            } catch (Throwable t) {
+                libQueueNote = "上传失败：" + t.getMessage();
+                com.mineaudio.client.fabric.MineAudioFabricClient.LOGGER.warn(
+                        "[library] 本地点歌上传失败：{}", t.toString());
+            }
+        }, "MineAudio-Upload");
+        thread.setDaemon(true);
+        thread.start();
+        return true;
+    }
+
+    private String[] uploadFile(Path file, String kind, String ext) throws Exception {
+        byte[] body = Files.readAllBytes(file);
+        String url = libraryUpload + (libraryUpload.contains("?") ? "&" : "?")
+                + "token=" + URLEncoder.encode(libraryToken, StandardCharsets.UTF_8)
+                + "&kind=" + kind + "&ext=" + ext;
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(120))
+                .header("Content-Type", "application/octet-stream")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofByteArray(body))
+                .build();
+        java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
+                .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 200) {
+            throw new java.io.IOException("upload HTTP " + response.statusCode() + "：" + response.body());
+        }
+        com.google.gson.JsonObject json = com.google.gson.JsonParser.parseString(response.body()).getAsJsonObject();
+        return new String[] { json.get("id").getAsString(), json.get("ext").getAsString() };
+    }
+
+    private static String extension(Path file) {
+        String name = file.getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? "bin" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
     /** 本地试听：只在本机播放玩家自有文件，不经过服务器。 */
@@ -608,6 +694,11 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         /** 校验 URL 并注册到本机网关（含缓存），解码器只访问 127.0.0.1。 */
         private void prepare() {
             String playUrl = url;
+            // 服务端自托管的本地曲库音频：显式信任该基址，跳过客户端媒体防火墙/网关
+            if (!libraryBase.isBlank() && url != null && url.startsWith(libraryBase)) {
+                decoder.start(playUrl, startPositionMs, this);
+                return;
+            }
             if (local) {
                 // 本地文件直接交给解码器；.ncm 在 prepare 线程按需解密（不阻塞渲染线程）
                 String path = playUrl;

@@ -22,12 +22,17 @@ public final class Packets {
             int reportIntervalMs,
             int maxAmbientLayers,
             Sync sync,
-            Firewall firewall) {
+            Firewall firewall,
+            Library library) {
 
         public record Sync(boolean enabled, int pingIntervalMs, int driftThresholdMs) {
         }
 
         public record Firewall(boolean httpsOnly, boolean denyPrivateNetwork, int maxRedirects) {
+        }
+
+        /** 本地曲库上传托管信息（未启用时为 null）。 */
+        public record Library(String baseUrl, String uploadUrl, String token) {
         }
     }
 
@@ -95,5 +100,17 @@ public final class Packets {
     }
 
     public record ErrorReport(String code, String message) {
+    }
+
+    /** 客户端本地曲库上传完成后，请求服务端把该曲目加入全服队列。 */
+    public record LibraryAdd(
+            String audioId,
+            String audioExt,
+            String coverId,
+            String coverExt,
+            String title,
+            String artist,
+            String album,
+            long durationMs) {
     }
 }

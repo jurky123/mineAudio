@@ -94,6 +94,16 @@ public final class LibraryHost {
         return publicBase;
     }
 
+    /** 客户端上传端点。 */
+    public String uploadUrl() {
+        return publicBase + "/mineaudio/upload";
+    }
+
+    /** 是否仍托管着该 id+扩展名 的文件（缓存过期后为 false）。 */
+    public boolean contains(String id, String ext) {
+        return id != null && ext != null && Files.isRegularFile(libraryDir.resolve(id + "." + ext));
+    }
+
     /** 由已托管的 id + 扩展名拼出对其他玩家可见的 URL。 */
     public String mediaUrl(String id, String ext) {
         return publicBase + "/mineaudio/media/" + id + "." + ext;

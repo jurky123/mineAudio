@@ -16,6 +16,7 @@ public enum PacketType {
     PING,
     PONG,
     ERROR,
+    LIBRARY_ADD,
     UNKNOWN;
 
     public static PacketType from(String raw) {

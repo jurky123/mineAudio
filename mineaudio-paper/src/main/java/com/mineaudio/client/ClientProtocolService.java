@@ -110,6 +110,7 @@ public final class ClientProtocolService {
             case PING -> onPing(player, envelope);
             case STATE -> onState(player, envelope);
             case ERROR -> onError(player, envelope);
+            case LIBRARY_ADD -> onLibraryAdd(player, envelope);
             default -> {
                 // 未知包忽略
             }
@@ -129,6 +130,9 @@ public final class ClientProtocolService {
         if (orchestrator != null) {
             orchestrator.onClientReady(player);
         }
+        com.mineaudio.library.LibraryHost host = plugin.libraryHost();
+        Packets.HelloAck.Library library = host == null ? null
+                : new Packets.HelloAck.Library(host.publicBase(), host.uploadUrl(), host.token());
         Packets.HelloAck ack = new Packets.HelloAck(
                 plugin.getPluginMeta().getVersion(),
                 Math.max(200, plugin.getConfig().getInt("stream-client.state-report-ms", 1000)),
@@ -141,7 +145,8 @@ public final class ClientProtocolService {
                 new Packets.HelloAck.Firewall(
                         plugin.getConfig().getBoolean("stream-client.firewall.https-only", true),
                         plugin.getConfig().getBoolean("stream-client.firewall.deny-private-network", true),
-                        plugin.getConfig().getInt("stream-client.firewall.max-redirects", 5)));
+                        plugin.getConfig().getInt("stream-client.firewall.max-redirects", 5)),
+                library);
         send(player, Envelope.of(PacketType.HELLO_ACK, ProtocolCodec.data(ack)));
         if (plugin.debug()) {
             plugin.getLogger().info("[client] " + player.getName() + " 握手完成 mod=" + hello.modVersion()
@@ -202,6 +207,20 @@ public final class ClientProtocolService {
         if (orchestrator != null && envelope.session() != null) {
             orchestrator.onClientTerminal(player, envelope.session(), false,
                     error.code(), error.message());
+        }
+    }
+
+    /** 客户端本地曲库上传完成：入全服队列。 */
+    private void onLibraryAdd(Player player, Envelope envelope) {
+        Packets.LibraryAdd add;
+        try {
+            add = ProtocolCodec.data(envelope, Packets.LibraryAdd.class);
+        } catch (ProtocolException e) {
+            return;
+        }
+        AudioOrchestrator orchestrator = plugin.orchestrator();
+        if (orchestrator != null) {
+            orchestrator.onLibraryAdd(player, add);
         }
     }
 }

@@ -416,3 +416,11 @@ V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHo
   4. 解析器：把 `library` 源的 id 映射为 `publicBase/mineaudio/media/<id>.<ext>`
   5. 客户端 MediaFirewall：对“服务端自托管主机”放行（当前默认 https-only + 禁私网）
   6. MineUI：本地曲库封面显示（FR-19，见 docs/MINEUI_REQUIREMENTS.md）
+
+### M2 接线完成（0.5.3）
+- 协议：`HELLO_ACK.Library{baseUrl,uploadUrl,token}`、`LIBRARY_ADD`（客户端→服务端）
+- 服务端：`LIBRARY_ADD` → 动态 Track `Stream("mineaudio","library","audioId|ext|coverId|coverExt")` → 全服队列；
+  `LibraryResolver` 把 id 映射为自托管 URL（音频 + 封面），缓存过期返回 NOT_PLAYABLE
+- 客户端：`lib_queue` 后台线程上传音频（.ncm 先解密）+ 封面 → `LIBRARY_ADD`；`lib_queue_note` 显示状态；
+  `prepare()` 对 `HELLO_ACK.Library.baseUrl` 前缀的 URL 显式信任（跳过 MediaFirewall/网关）
+- 其他玩家：PLAY.coverUrl 指向自托管封面；需把托管主机加入 MineUI `remote-images.allowed-domains`

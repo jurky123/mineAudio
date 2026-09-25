@@ -936,6 +936,12 @@
                       "text": "{local.mineaudio.lib_note}",
                       "color": "#909090",
                       "scale": 0.75
+                    },
+                    {
+                      "type": "text",
+                      "text": "{local.mineaudio.lib_queue_note}",
+                      "color": "#FFD54F",
+                      "scale": 0.75
                     }
                   ]
                 },

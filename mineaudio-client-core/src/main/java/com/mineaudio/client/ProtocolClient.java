@@ -166,6 +166,11 @@ public final class ProtocolClient {
                 ProtocolCodec.data(new Packets.ErrorReport(code, safe)));
     }
 
+    /** 本地曲库上传完成后，请求服务端入全服队列。 */
+    public void sendLibraryAdd(Packets.LibraryAdd add) {
+        send(PacketType.LIBRARY_ADD, ProtocolCodec.data(add));
+    }
+
     // ---------- 收发 ----------
 
     public void handle(byte[] data) {

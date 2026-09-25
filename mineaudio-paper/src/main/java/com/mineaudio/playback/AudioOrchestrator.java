@@ -42,6 +42,7 @@ import com.mineaudio.backend.BackendRegistry;
 import com.mineaudio.backend.StreamBackend;
 import com.mineaudio.profile.PlayerPackStatus;
 import com.mineaudio.profile.PlayerStreamStatus;
+import com.mineaudio.protocol.Packets;
 import com.mineaudio.track.CueRegistry;
 import com.mineaudio.track.TrackRegistry;
 
@@ -419,6 +420,25 @@ public final class AudioOrchestrator implements MineAudio {
     /** 兼容旧调用：等价于“自己”临时播放。 */
     public PlaybackSession playNow(Player player, AudioTrack track) {
         return playSelf(player, track);
+    }
+
+    /** 客户端本地曲库上传完成：构造动态 STREAM 曲目并入全服队列（分发给所有玩家）。 */
+    public void onLibraryAdd(Player player, Packets.LibraryAdd add) {
+        com.mineaudio.library.LibraryHost host = plugin.libraryHost();
+        if (host == null || add == null || add.audioId() == null || add.audioExt() == null
+                || !host.contains(add.audioId(), add.audioExt())) {
+            debug("本地曲库上传无效或已过期：" + (add == null ? "null" : add.audioId()));
+            return;
+        }
+        String libraryId = add.audioId() + "|" + add.audioExt() + "|"
+                + (add.coverId() == null ? "" : add.coverId()) + "|"
+                + (add.coverExt() == null ? "" : add.coverExt());
+        AudioTrack track = new AudioTrack(Key.key("mineaudio", "lib_" + add.audioId()), AudioBus.MUSIC,
+                new AudioSource.Stream("mineaudio", com.mineaudio.stream.resolve.LibraryResolver.SOURCE, libraryId, null),
+                PlaybackOptions.DEFAULT,
+                new AudioMetadata(add.title(), add.artist(), add.durationMs()));
+        enqueue(player, track);
+        debug(player.getName() + " 本地曲库点歌入全服队列：" + add.title());
     }
 
     /** 停止：个人临时播放中 → 只停自己并回到全服；否则停全服（并清空点歌队列）。 */
