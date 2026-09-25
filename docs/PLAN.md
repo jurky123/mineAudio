@@ -398,3 +398,21 @@ V1 之后的独立事项（本次不做）：MineUNO / MineChess 接入；PackHo
 3. **Region 编辑命令**：本方案用 `pos1/pos2/create`（不依赖 WorldEdit）；Sphere 用 `/mineaudio region sphere <半径>` 以玩家位置为中心。
 4. **流媒体 Adapter 的启动时机**：V1 完成后是否马上做 MoeMusic Adapter（Phase 2）。业务接入已确认放后，届时可直接评估。
 5. **API 版本策略**：V1 先与插件同版本号（0.1.0）；是否现在就把 `mineaudio-api` 独立发版/独立仓库，倾向暂不，等第二个消费者接入后再拆。
+
+## M2 本地曲库上传分发（进行中，2026-09-25）
+
+目标：客户端本地曲库点歌到全服时，把音频与封面上传到服务器，服务器临时托管并下发给其他玩家；
+封面随 PLAY 下发，其他客户端显示（需把 MineAudio 托管主机加入 MineUI `remote-images.allowed-domains`）。
+
+- 已实现（0.5.1）：服务端 `LibraryHost`（JDK HttpServer）
+  - `POST /mineaudio/upload?token=&kind=audio|cover&ext=`：令牌校验、按内容 sha256 去重、落盘 `plugins/MineAudio/library/`
+  - `GET /mineaudio/media/<sha256>.<ext>`：支持 Range/断点，含正确 Content-Type
+  - 定时清理（`library.retention-hours`），单文件上限 `library.max-file-mb`
+  - 配置：`library.enabled/public-url/bind/port/token/retention-hours/max-file-mb`
+- 待实现：
+  1. 协议：`LIBRARY_TICKET`（服务端下发上传令牌与上传基址）、`LIBRARY_ADD`（客户端上报 audioId/coverId/元数据）
+  2. 客户端：`lib_queue` 触发上传（后台线程，含封面），再发 `LIBRARY_ADD`
+  3. 服务端：`LIBRARY_ADD` → 动态 Track（`AudioSource.Stream("mineaudio","library",audioId)`）→ 全服队列；`coverUrl` 指向托管封面
+  4. 解析器：把 `library` 源的 id 映射为 `publicBase/mineaudio/media/<id>.<ext>`
+  5. 客户端 MediaFirewall：对“服务端自托管主机”放行（当前默认 https-only + 禁私网）
+  6. MineUI：本地曲库封面显示（FR-19，见 docs/MINEUI_REQUIREMENTS.md）

@@ -43,6 +43,7 @@ public final class MineAudioPlugin extends JavaPlugin {
     private NbsBackend nbsBackend;
     private ClientProtocolService clientProtocol;
     private AudioOrchestrator orchestrator;
+    private com.mineaudio.library.LibraryHost libraryHost;
     private AudioUi audioUi = new NoopAudioUi();
     private com.mineaudio.stream.search.NeteaseSearch searchService;
     private volatile boolean shuttingDown;
@@ -68,6 +69,9 @@ public final class MineAudioPlugin extends JavaPlugin {
         }
         clientProtocol = new ClientProtocolService(this);
         clientProtocol.register();
+        if (getConfig().getBoolean("library.enabled", false)) {
+            libraryHost = new com.mineaudio.library.LibraryHost(this);
+        }
         StreamBackend streamBackend = new StreamBackend(this);
         StreamResolverChain resolvers = createResolvers();
         streamBackend.register(new MineAudioClientProvider(this, clientProtocol, resolvers));
@@ -99,6 +103,10 @@ public final class MineAudioPlugin extends JavaPlugin {
         shuttingDown = true;
         MineAudioProvider.unregister();
         placeholderUnregister.run();
+        if (libraryHost != null) {
+            libraryHost.stop();
+            libraryHost = null;
+        }
         // 先停调度与实际播放（此时消息通道仍可用，能发出 STOP），最后再注销协议通道
         regionManager.stop();
         emitterManager.stop();
@@ -227,6 +235,11 @@ public final class MineAudioPlugin extends JavaPlugin {
 
     public ClientProtocolService clientProtocol() {
         return clientProtocol;
+    }
+
+    /** 本地曲库上传托管（未启用时为 null）。 */
+    public com.mineaudio.library.LibraryHost libraryHost() {
+        return libraryHost;
     }
 
     public boolean debug() {

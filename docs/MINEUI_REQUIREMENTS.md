@@ -359,3 +359,51 @@ MineAudio 的 64px 封面天然是像素风——本仓库无需加 `filter` 字
 ---
 
 落地后：MineAudio 侧只负责下发状态与动作。本需求建议同步到 mineUI 仓库 `docs/` 作为正式需求。
+
+---
+
+## 17. FR-19 本地图片来源（本地曲库封面显示，2026-09-25）
+
+### 背景
+MineAudio 客户端本地曲库（玩家自有音频 / 网易云 `.ncm`）已解析并缓存封面（本地文件），
+但 MineUI 的 `image` 节点只能加载 **http(s) 公网图片**（`RemoteImages` + 服务端
+`remote-images.allowed-domains` 白名单，且 `requirePublicAddress` 拒绝私网），
+无法显示客户端本地图片，导致本地曲库列表**没有封面**（与“搜索点歌”列表有封面不一致）。
+
+### 需求（通用能力，非 MineAudio 专用）
+让 `image` 节点的来源支持**客户端本地图片提供者**：
+
+- 页面写法沿用本地绑定：`"image": "{local.<ns>.<key>}"`（复用现有绑定位置）。
+- 扩展 `mineui-client-api` 的 `ClientStateProvider`，增加**可选**方法（默认返回 null，向后兼容）：
+  ```java
+  /** 返回该 key 对应的图片字节（PNG/JPEG 等 ImageIO 可解码）；返回 null 表示不是本地图片，按 URL 处理。 */
+  default byte[] image(String key) { return null; }
+  ```
+- 客户端渲染：当 `image` 绑定解析为 `{local.ns.key}` 且 `image(key)` 返回非空字节时，
+  **直接解码为纹理**（复用现有 `ImageIO` → PNG → `NativeImage` 逻辑），
+  **不经过网络 / 远程策略 / 域名白名单**。
+- 缓存：按 `(namespace, key, providerGeneration)` 缓存已解码纹理；仅当 `generation` 变化或 key 首次出现时重新取字节，
+  **不得每帧调用 `image()` 重新解码**（结构变化沿用现有 `generation()` 驱动）。
+- 失败降级：`image()` 抛异常或返回不可解码字节 → 该图不显示，**不报错、不刷屏**；必要时回退到 `{state.*}` URL 逻辑。
+- 线程：`image()` 在渲染/逻辑线程调用，实现必须**无阻塞、无网络、无重解码**
+  （MineAudio 侧按 key 返回已缓存的字节）。
+
+### 验收
+- MineAudio 本地曲库页 8 个插槽各自显示封面（本地 `.covers/<sha256>.jpg`）。
+- 多条目 / 翻页时不掉帧（仅在 generation 变化时取图）。
+- 未注册该能力或旧客户端：`{local.*}` 图片为空，行为与现状一致（不报错）。
+
+### 备选（不新增接口时）
+`image` 来源字符串直接支持 `data:image/...;base64,...`，但必须以**内容哈希或 provider 提供的短键**做缓存，
+避免每帧对超长 data URI 做哈希；实现复杂度与上述接口相当，故优先上述显式 `image(key)`。
+
+### MineAudio 侧配合
+- `localState` 仍提供 `libN_cover`（占位字符串，供 `visible`/非图片回退）；
+  并实现 `image(key)`（如 `lib0_cover`）返回该槽位封面缓存字节；越界/无封面返回 null。
+- 无需 MineAudio 服务端改动。
+
+### 关联（B：服务端托管封面，非 MineUI 代码需求）
+点歌到全服时，MineAudio 会把封面一并上传，**由 MineAudio 自带 HTTP 服务公开托管**，
+`PLAY.coverUrl` 指向该地址，其他玩家据此显示封面。届时需把 MineAudio 托管主机加入
+**MineUI 服务端 `config.yml` 的 `remote-images.allowed-domains`**（服务端配置项，非代码改动；
+`RemoteImages` 仍要求公网地址）。此项仅登记备查。
