@@ -407,3 +407,45 @@ MineAudio 客户端本地曲库（玩家自有音频 / 网易云 `.ncm`）已解
 `PLAY.coverUrl` 指向该地址，其他玩家据此显示封面。届时需把 MineAudio 托管主机加入
 **MineUI 服务端 `config.yml` 的 `remote-images.allowed-domains`**（服务端配置项，非代码改动；
 `RemoteImages` 仍要求公网地址）。此项仅登记备查。
+
+### FR-19 接口决策（MineAudio 定，供 mineui-client-api 落地）
+
+**1) 选 A：provider + 短键 + generation（不做 B 自注册贴图）**
+- 业务 mod 保持无 MC 依赖（`mineui-client-api` 纯 Java 接口）；纹理创建/缓存/释放全部由 MineUI 统一负责。
+- B（业务自注册/自管纹理）会让业务耦合 MC/GL 与纹理生命周期，明确不采用。
+
+**2) 接口签名（`mineui-client-api`，向后兼容的 default 方法）**
+```java
+public interface ClientStateProvider {
+    Object get(String key);
+    /** 返回该短键对应的图片原始字节（ImageIO 可解码），null 表示无本地图片（按 URL 逻辑回退）。 */
+    default byte[] image(String key) { return null; }
+    default long generation() { return 0L; }
+}
+```
+- 仅当图片节点的绑定形态是 `"{local.<ns>.<key>}"` 时，MineUI 调用该 ns provider 的 `image(key)`。
+- 若返回非空：视为本地图片，**不走网络/远程策略/域名白名单**；若返回 null：回退到既有「把 `get(key)` 当 URL」逻辑（保持旧客户端兼容）。
+- 调用时机：图片节点的 source 求值时；调用线程为渲染/逻辑线程。实现必须**无阻塞、无网络、无重解码**（返回已缓存字节引用）。
+
+**3) 短键语义 + 版本自增（MineAudio 约定）**
+- 短键是**稳定的槽位键**，如 `lib0_cover`…`lib7_cover`（当前页 8 个插槽）。
+- 槽位键不变、内容可变（翻页/换歌）→ 因此 **MineUI 必须把该 provider 的 `generation()` 变化视为整个命名空间本地图片缓存失效**，丢弃旧纹理并在下次使用时重新调用 `image(key)`。
+- MineAudio 的 `generation()` 已在以下时机自增：扫描完成、翻页、删除；即任何会导致封面内容变化的操作都会自增。MineAudio 负责正确性，MineUI 负责在 generation 变化时失效缓存。
+- 不要求每帧调用 `image()`；同一 generation 内按 `(namespace,key)` 复用。
+
+**4) 字节上限与格式**
+- 字节上限：**硬上限 2 MiB/图**（超过则忽略该图并 debug 日志一次）。MineAudio 侧会把大封面在导入时下采样到 ≤512px（JPEG），保证远小于上限；当前上传/缓存封面已 ≤2 MiB。
+- 允许格式：PNG / JPEG / GIF / BMP（ImageIO 可解码；`RemoteImages.decodeBytes` 现有 JPEG→PNG 路径已覆盖）。
+
+**5) 命名空间隔离**
+- 只允许**同命名空间**provider 提供该命名空间的本地图片；MineUI 不得用一个 ns 的 provider 去取另一个 ns 的 key。
+- 未注册 provider / 返回 null / 解码失败 → 渲染为空，**不报错、不刷屏**（debug 级一次）。
+
+**6) 生命周期与所有权**
+- MineUI：纹理的创建与 `close()` 由 MineUI 负责；generation 变化、页面关闭、断线/切服时释放该命名空间本地图片纹理。
+- MineAudio：字节缓存的持有与释放由 MineAudio 负责（随 provider 注册/注销生命周期）。
+
+**7) MineAudio 接线（api 落地后）**
+- `localState`：继续提供 `libN_cover`（占位字符串，供 `visible`/回退）与 `libN_*` 文本。
+- 新增实现 `image(key)`：对 `lib<slot>_cover` 返回当前页该槽位封面缓存字节（`library/.covers/<sha256>.jpg`，读入内存缓存）；越界/无封面返回 null。
+- 页面上本地曲库项加图片节点：`"image": "{local.mineaudio.libN_cover}"`（配合 `visible`/`width/height`）。

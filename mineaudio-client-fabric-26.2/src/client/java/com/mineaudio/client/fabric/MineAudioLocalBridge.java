@@ -26,6 +26,14 @@ final class MineAudioLocalBridge {
                     public long generation() {
                         return audio.localGeneration();
                     }
+
+                    /**
+                     * FR-19 本地图片扩展点（mineui-client-api 新增可选方法）。
+                     * 此处不放 {@code @Override}：旧 api 下是普通方法、可编译；新 api 下按名+签名自动覆盖。
+                     */
+                    public byte[] image(String key) {
+                        return audio.localImage(key);
+                    }
                 },
                 audio::localAction);
         // 业务能力位：服务端据此确认“MineAudio 本地控制”可用（local_state 只说明有本地提供者）

@@ -46,6 +46,9 @@ public final class LocalLibrary {
     private volatile long generation;
     private volatile String note = "尚未扫描";
     private volatile String lastFailure;
+    /** 封面字节缓存（内容寻址，按 track id 缓存，供本地图片绑定）。 */
+    private final Map<String, byte[]> coverCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int COVER_MAX_BYTES = 2 * 1024 * 1024;
 
     public LocalLibrary(Path dir, MetadataProbe probe) {
         this(dir, probe, new NcmDecoder());
@@ -84,6 +87,22 @@ public final class LocalLibrary {
 
     public Path lyricsPath(LocalTrack track) {
         return track.lyricsFile() == null ? null : dir.resolve(track.lyricsFile());
+    }
+
+    /** 封面字节（本地图片绑定用）：按内容寻址缓存；无封面或超过 2MiB 返回 null。 */
+    public byte[] coverBytes(LocalTrack track) {
+        if (track == null || track.coverFile() == null) return null;
+        byte[] cached = coverCache.get(track.id());
+        if (cached != null) return cached;
+        try {
+            Path path = dir.resolve(track.coverFile());
+            if (!Files.isRegularFile(path) || Files.size(path) > COVER_MAX_BYTES) return null;
+            byte[] bytes = Files.readAllBytes(path);
+            coverCache.put(track.id(), bytes);
+            return bytes;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** 结构性变化计数：列表增删/扫描完成时自增（MineUI 据此重排）。 */

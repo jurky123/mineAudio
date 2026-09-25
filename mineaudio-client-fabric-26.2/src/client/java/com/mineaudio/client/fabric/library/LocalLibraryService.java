@@ -35,6 +35,10 @@ public final class LocalLibraryService {
         return library.ensureDecoded(track);
     }
 
+    public byte[] coverBytes(com.mineaudio.client.library.LocalTrack track) {
+        return library.coverBytes(track);
+    }
+
     /** 后台扫描（不阻塞渲染线程）。 */
     public void scanAsync() {
         Thread thread = new Thread(() -> {

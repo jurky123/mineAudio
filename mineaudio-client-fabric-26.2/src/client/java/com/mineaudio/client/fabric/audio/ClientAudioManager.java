@@ -117,6 +117,12 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
         if (field.equals("present")) {
             return track != null ? "true" : "false";
         }
+        if (field.equals("hasCover")) {
+            return track != null && track.coverFile() != null ? "true" : "false";
+        }
+        if (field.equals("cover")) {
+            return ""; // 占位：本地图片走 image(key)，不把文件路径当 URL
+        }
         if (track == null) return "";
         return switch (field) {
             case "title" -> track.title() == null ? "" : track.title();
@@ -124,6 +130,25 @@ public final class ClientAudioManager implements ProtocolClient.Listener {
             case "time" -> track.timeText();
             default -> null;
         };
+    }
+
+    /** 本地图片绑定（mineui-client-api 的 ClientStateProvider.image 可选扩展点）。 */
+    public byte[] localImage(String key) {
+        if (!key.startsWith("lib")) return null;
+        String rest = key.substring(3);
+        if (rest.startsWith("_")) rest = rest.substring(1);
+        int us = rest.indexOf('_');
+        if (us <= 0) return null;
+        int slot;
+        try {
+            slot = Integer.parseInt(rest.substring(0, us));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        if (!rest.substring(us + 1).startsWith("cover")) return null;
+        com.mineaudio.client.fabric.library.LocalLibraryService lib = library;
+        if (lib == null) return null;
+        return lib.coverBytes(lib.library().track(libPage * LIB_PAGE_SIZE + slot));
     }
 
     /** 媒体防火墙：本地默认策略与服务端策略取交集。 */
