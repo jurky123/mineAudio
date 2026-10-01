@@ -63,8 +63,8 @@ MineAudio 不是点歌插件，而是整个服务器的 **Audio Orchestrator**�
 
 | 配置 | 默认 | 说明 |
 | --- | --- | --- |
-| `region-check-interval-ticks` | 10 | 区域检测间隔 |
-| `region-enter-delay-ms` / `region-exit-delay-ms` | 300 / 500 | 边界迟滞默认值 |
+| `region-check-interval-ticks` | 10 | 区域检测间隔（也是迟滞采样的粒度） |
+| `region-enter-delay-ms` / `region-exit-delay-ms` | 300 / 500 | 边界迟滞默认值（按 server tick 计时） |
 | `max-ambient-layers` | 3 | AMBIENT 同时层数上限 |
 | `emitter-poll-interval-ticks` | 5 | 红石 Emitter 轮询间隔 |
 | `nbs.position-distance` | 32 | NBS 位置声默认可听距离 |
@@ -136,6 +136,10 @@ regions:
     enter-delay-ms: 300         # 可选，覆盖 config 默认
     exit-delay-ms: 500
 ```
+
+> 迟滞计时：`enter-delay-ms`/`exit-delay-ms` 会换算成 server tick（50ms/tick），并按**实际经过的 tick 数**推进，
+> 与 `region-check-interval-ticks` 无关；由于是轮询采样，状态切换发生在 `[延迟, 延迟 + 检测间隔)` 之间
+> （默认最多再晚 10 tick ≈ 500ms）。服务器卡顿导致 tick 变慢时，按真实经过 tick 计时，不会额外放大延迟。
 
 ### emitters.yml
 

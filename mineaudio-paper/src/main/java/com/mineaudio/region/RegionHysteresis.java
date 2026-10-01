@@ -10,7 +10,11 @@ import java.util.function.Function;
 
 /**
  * 每玩家区域进入/离开迟滞：站在边界反复进出时不会立刻切歌。
- * 每次 tick 调用 {@link #update}，达到延迟后才改变激活状态。
+ *
+ * <p>延迟以 <b>server tick</b> 计；每次检测（默认每 {@code region-check-interval-ticks} tick）调用
+ * {@link #update} 时把“自上次检测以来经过的 tick 数”传入，因此检测间隔不改变实际延迟时长。
+ * 由于是轮询采样，状态切换发生在 {@code [delay, delay + interval)} tick 之间（检测粒度误差）；
+ * elapsed 用实际 tick 差衡量，服务器卡顿（tick 变慢）时按真实经过的 tick 推进。</p>
  */
 public final class RegionHysteresis {
 
@@ -18,8 +22,13 @@ public final class RegionHysteresis {
     private final Map<String, Integer> exitTicks = new HashMap<>();
     private final Set<String> active = new LinkedHashSet<>();
 
-    /** 返回本次状态发生变化的区域 ID（进入或离开）。 */
-    public List<String> update(Set<String> inside, Function<String, AudioRegion> lookup) {
+    /**
+     * 返回本次状态发生变化的区域 ID（进入或离开）。
+     *
+     * @param elapsedTicks 自上次检测以来经过的 server tick 数（&gt;=1）
+     */
+    public List<String> update(Set<String> inside, Function<String, AudioRegion> lookup, int elapsedTicks) {
+        int elapsed = Math.max(1, elapsedTicks);
         List<String> changes = new ArrayList<>();
         for (String id : inside) {
             if (active.contains(id)) {
@@ -27,7 +36,7 @@ public final class RegionHysteresis {
                 exitTicks.remove(id);
                 continue;
             }
-            int ticks = enterTicks.merge(id, 1, Integer::sum);
+            int ticks = enterTicks.merge(id, elapsed, Integer::sum);
             AudioRegion region = lookup.apply(id);
             int delay = region == null ? 0 : region.enterDelayTicks();
             if (ticks >= delay) {
@@ -38,7 +47,7 @@ public final class RegionHysteresis {
         }
         for (String id : new ArrayList<>(active)) {
             if (inside.contains(id)) continue;
-            int ticks = exitTicks.merge(id, 1, Integer::sum);
+            int ticks = exitTicks.merge(id, elapsed, Integer::sum);
             AudioRegion region = lookup.apply(id);
             int delay = region == null ? 0 : region.exitDelayTicks();
             if (ticks >= delay) {

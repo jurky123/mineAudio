@@ -46,6 +46,9 @@ public final class RegionManager {
     private final Map<UUID, RegionHysteresis> presence = new HashMap<>();
     private BukkitTask task;
     private int maxAmbientLayers = 3;
+    /** 区域检测间隔（tick）与上次检测的 server tick，用于按真实经过 tick 推进迟滞。 */
+    private int checkIntervalTicks = 10;
+    private int lastCheckTick = -1;
 
     public RegionManager(MineAudioPlugin plugin) {
         this.plugin = plugin;
@@ -69,8 +72,9 @@ public final class RegionManager {
     public void start() {
         stop();
         maxAmbientLayers = Math.max(0, plugin.getConfig().getInt("max-ambient-layers", 3));
-        int interval = Math.max(1, plugin.getConfig().getInt("region-check-interval-ticks", 10));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, interval, interval);
+        checkIntervalTicks = Math.max(1, plugin.getConfig().getInt("region-check-interval-ticks", 10));
+        lastCheckTick = -1;
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, checkIntervalTicks, checkIntervalTicks);
     }
 
     public void stop() {
@@ -83,13 +87,16 @@ public final class RegionManager {
     // ---------- 检测与仲裁 ----------
 
     private void tick() {
+        int now = Bukkit.getCurrentTick();
+        int elapsedTicks = lastCheckTick < 0 ? checkIntervalTicks : Math.max(1, now - lastCheckTick);
+        lastCheckTick = now;
         for (Player player : Bukkit.getOnlinePlayers()) {
-            updatePlayer(player);
+            updatePlayer(player, elapsedTicks);
         }
         presence.keySet().removeIf(id -> Bukkit.getPlayer(id) == null);
     }
 
-    private void updatePlayer(Player player) {
+    private void updatePlayer(Player player, int elapsedTicks) {
         Location location = player.getLocation();
         List<AudioRegion> candidates = index.candidates(player.getWorld().getName(),
                 location.getBlockX() >> 4, location.getBlockZ() >> 4);
@@ -101,7 +108,7 @@ public final class RegionManager {
         }
         RegionHysteresis hysteresis = presence.computeIfAbsent(player.getUniqueId(),
                 ignored -> new RegionHysteresis());
-        for (String id : hysteresis.update(inside, regionById::get)) {
+        for (String id : hysteresis.update(inside, regionById::get, elapsedTicks)) {
             AudioRegion region = regionById.get(id);
             if (region == null) continue;
             AudioTrack track = region.music() == null ? null
